@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="RDV EDL">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>RDV EDL — Administration</title>
+<style>
+:root{
+  --corail:#F0997B; --corail-clair:#FAECE7; --corail-fonce:#4A1B0C; --corail-bord:#D85A30;
+  --texte:#1c1c1a; --texte-doux:#5F5E5A; --bord:#D3D1C7; --fond:#F7F6F3; --blanc:#fff;
+  --vert:#EAF3DE; --vert-texte:#173404; --rouge:#FCEBEB; --rouge-texte:#501313;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--fond);color:var(--texte);font-size:16px;line-height:1.5;
+  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{background:var(--corail);padding:18px 16px 16px;color:var(--corail-fonce)}
+header h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.5px}
+header .v{font-size:12px;opacity:.75;margin-top:2px}
+main{padding:16px;max-width:560px;margin:0 auto}
+.carte{background:var(--blanc);border:1px solid var(--bord);border-radius:12px;padding:16px;margin-bottom:14px}
+.carte h2{margin:0 0 14px;font-size:16px;font-weight:600}
+label{display:block;font-size:13px;color:var(--texte-doux);margin:0 0 4px}
+input,select{width:100%;height:46px;padding:0 12px;font-size:16px;font-family:inherit;
+  border:1px solid var(--bord);border-radius:8px;background:var(--blanc);color:var(--texte)}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+button{width:100%;min-height:48px;font-size:16px;font-family:inherit;font-weight:600;
+  border-radius:8px;border:1px solid var(--corail-bord);background:var(--corail);
+  color:var(--corail-fonce);cursor:pointer}
+button:active{opacity:.8}
+button.secondaire{background:var(--blanc);border-color:var(--bord);color:var(--texte);font-weight:400}
+.apercu{background:var(--corail-clair);border-radius:8px;padding:12px;margin:12px 0}
+.apercu p{margin:0 0 8px;font-size:13px;color:var(--corail-fonce)}
+.pastilles{display:flex;flex-wrap:wrap;gap:8px}
+.pastille{background:var(--blanc);border:1px solid var(--corail-bord);border-radius:6px;
+  padding:6px 12px;font-size:15px;color:var(--corail-fonce)}
+#etat{margin-top:12px;padding:12px;border-radius:8px;font-size:14px;display:none}
+#etat.ok{display:block;background:var(--vert);color:var(--vert-texte)}
+#etat.ko{display:block;background:var(--rouge);color:var(--rouge-texte)}
+#etat.attente{display:block;background:var(--fond);color:var(--texte-doux)}
+details{background:var(--blanc);border:1px solid var(--bord);border-radius:12px;padding:0;margin-bottom:14px}
+summary{padding:16px;font-size:16px;font-weight:600;cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";float:right;font-weight:400;color:var(--texte-doux)}
+details[open] summary::after{content:"\2212"}
+.aide{padding:0 16px 16px;font-size:14px;color:var(--texte-doux)}
+.aide h3{font-size:14px;color:var(--texte);margin:16px 0 6px}
+.aide ol{margin:0;padding-left:20px}
+.aide li{margin-bottom:6px}
+footer{padding:0 16px 32px;max-width:560px;margin:0 auto}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RDV EDL</h1>
+  <div class="v">Administration &mdash; v1.0</div>
+</header>
+
+<main>
+
+<div class="carte">
+  <h2>Ouvrir une journ&eacute;e</h2>
+
+  <div class="duo">
+    <div>
+      <label for="date">Date</label>
+      <input type="date" id="date">
+    </div>
+    <div>
+      <label for="type">Type</label>
+      <select id="type">
+        <option value="EDLS">EDLS &mdash; 1 h 30</option>
+        <option value="EDLE">EDLE &mdash; 2 h 30</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="duo">
+    <div>
+      <label for="debut">Premi&egrave;re heure</label>
+      <input type="time" id="debut" value="09:00">
+    </div>
+    <div>
+      <label for="nombre">Nombre de cr&eacute;neaux</label>
+      <input type="number" id="nombre" min="1" max="8" value="5">
+    </div>
+  </div>
+
+  <div class="apercu">
+    <p id="apercu-titre">Cr&eacute;neaux qui seront ouverts</p>
+    <div class="pastilles" id="apercu"></div>
+  </div>
+
+  <button id="envoyer">Ouvrir ces cr&eacute;neaux</button>
+  <div id="etat"></div>
+</div>
+
+<details>
+  <summary>Mode d'emploi</summary>
+  <div class="aide">
+
+    <h3>&Agrave; quoi sert cet &eacute;cran</h3>
+    <p>Il ouvre les journ&eacute;es pendant lesquelles vous &ecirc;tes disponible. Les locataires ne
+    voient que les cr&eacute;neaux ouverts ici, et ne peuvent rien cr&eacute;er eux-m&ecirc;mes.</p>
+
+    <h3>Marche &agrave; suivre</h3>
+    <ol>
+      <li>Choisissez la date de la journ&eacute;e &agrave; ouvrir.</li>
+      <li>Choisissez le type : EDLS pour les sorties, EDLE pour les entr&eacute;es.</li>
+      <li>V&eacute;rifiez les heures calcul&eacute;es, affich&eacute;es juste en dessous.</li>
+      <li>Touchez &laquo;&nbsp;Ouvrir ces cr&eacute;neaux&nbsp;&raquo;.</li>
+    </ol>
+
+    <h3>Comment les heures sont calcul&eacute;es</h3>
+    <p>Un EDLS dure 1 h 30, un EDLE 2 h 30. Une demi-heure de trajet est ajout&eacute;e entre deux
+    rendez-vous. Le pas est donc de 2 heures en EDLS et de 3 heures en EDLE. La premi&egrave;re
+    heure est 09:00 par d&eacute;faut ; vous pouvez la modifier.</p>
+
+    <h3>Rouvrir une journ&eacute;e d&eacute;j&agrave; ouverte</h3>
+    <p>Sans danger. Les cr&eacute;neaux existants sont conserv&eacute;s tels quels, avec leurs
+    r&eacute;servations. Seuls les cr&eacute;neaux nouveaux sont ajout&eacute;s. C'est ainsi que
+    l'on passe d'une journ&eacute;e de 4 places &agrave; une journ&eacute;e de 5.</p>
+
+    <h3>Combien de journ&eacute;es ouvrir</h3>
+    <p>&Eacute;talez largement : une journ&eacute;e &agrave; moiti&eacute; vide ne co&ucirc;te rien.
+    Gardez en revanche peu de places sur les derni&egrave;res dates, car c'est leur raret&eacute;
+    qui pousse les locataires &agrave; r&eacute;server t&ocirc;t.</p>
+
+    <h3>La r&egrave;gle des six jours</h3>
+    <p>Un locataire entrant ne voit que les cr&eacute;neaux situ&eacute;s au moins six jours
+    apr&egrave;s la sortie de son studio. Tant que le sortant n'a pas r&eacute;serv&eacute;,
+    l'entrant ne voit rien et re&ccedil;oit un message d'attente.</p>
+
+    <h3>En cas de blocage</h3>
+    <p>Si les r&eacute;servations ne passent plus, ouvrez Make et v&eacute;rifiez qu'aucune
+    ex&eacute;cution n'est rest&eacute;e en erreur : une ex&eacute;cution en erreur non
+    trait&eacute;e bloque toutes les suivantes.</p>
+
+  </div>
+</details>
+
+<footer>
+  <button class="secondaire" onclick="window.open('https://www.make.com/en/login','_blank')">Ouvrir Make</button>
+</footer>
+
+</main>
+
+<script>
+var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
+var PAS = { EDLS: 120, EDLE: 180 };
+var DUREE = { EDLS: 90, EDLE: 150 };
+
+function el(id){ return document.getElementById(id); }
+
+function deuxChiffres(n){ return (n < 10 ? "0" : "") + n; }
+
+function calculer(){
+  var type = el("type").value;
+  var debut = el("debut").value || "09:00";
+  var nombre = parseInt(el("nombre").value, 10);
+  if (isNaN(nombre) || nombre < 1) nombre = 1;
+  if (nombre > 8) nombre = 8;
+
+  var h = parseInt(debut.split(":")[0], 10);
+  var m = parseInt(debut.split(":")[1], 10);
+  var minutes = h * 60 + m;
+
+  var liste = [];
+  for (var i = 0; i < nombre; i++){
+    var t = minutes + i * PAS[type];
+    liste.push(deuxChiffres(Math.floor(t / 60)) + ":" + deuxChiffres(t % 60));
+  }
+  return liste;
+}
+
+function afficherApercu(){
+  var liste = calculer();
+  var type = el("type").value;
+  var zone = el("apercu");
+  zone.innerHTML = "";
+  for (var i = 0; i < liste.length; i++){
+    var d = document.createElement("div");
+    d.className = "pastille";
+    d.textContent = liste[i];
+    zone.appendChild(d);
+  }
+  var fin = liste[liste.length - 1].split(":");
+  var finMin = parseInt(fin[0],10) * 60 + parseInt(fin[1],10) + DUREE[type];
+  el("apercu-titre").textContent =
+    liste.length + " cr\u00e9neaux, derni\u00e8re visite termin\u00e9e vers "
+    + deuxChiffres(Math.floor(finMin / 60)) + ":" + deuxChiffres(finMin % 60);
+}
+
+function montrer(classe, texte){
+  var e = el("etat");
+  e.className = classe;
+  e.textContent = texte;
+}
+
+el("type").addEventListener("change", function(){
+  el("nombre").value = (el("type").value === "EDLS") ? 5 : 4;
+  afficherApercu();
+});
+el("debut").addEventListener("change", afficherApercu);
+el("nombre").addEventListener("input", afficherApercu);
+
+el("envoyer").addEventListener("click", function(){
+  var date = el("date").value;
+  if (!date){
+    montrer("ko", "Choisissez d'abord une date.");
+    return;
+  }
+  var type = el("type").value;
+  var heures = calculer();
+  var creneaux = [];
+  for (var i = 0; i < heures.length; i++){
+    creneaux.push({
+      cle: date + "_" + heures[i].replace(":", "h"),
+      date: date,
+      heure: heures[i],
+      type: type,
+      duree: DUREE[type],
+      etat: "libre"
+    });
+  }
+
+  montrer("attente", "Envoi en cours\u2026");
+  el("envoyer").disabled = true;
+
+  fetch(WEBHOOK, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "ouvrir", date: date, type: type, creneaux: creneaux })
+  })
+  .then(function(r){ return r.text().then(function(t){ return { ok: r.ok, texte: t }; }); })
+  .then(function(r){
+    el("envoyer").disabled = false;
+    if (r.ok) montrer("ok", "Journ\u00e9e ouverte : " + creneaux.length + " cr\u00e9neaux envoy\u00e9s.");
+    else montrer("ko", "Refus de Make : " + r.texte);
+  })
+  .catch(function(e){
+    el("envoyer").disabled = false;
+    montrer("ko", "\u00c9chec de l'envoi : " + e.message);
+  });
+});
+
+(function(){
+  var d = new Date();
+  el("date").value = d.getFullYear() + "-" + deuxChiffres(d.getMonth()+1) + "-" + deuxChiffres(d.getDate());
+  afficherApercu();
+})();
+</script>
+
+</body>
+</html>
