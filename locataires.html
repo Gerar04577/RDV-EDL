@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v1.0 — 18/09/2026 -->
+<!-- locataires.html — RDV EDL v1.1 — 18/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -58,7 +58,7 @@
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v1.0 — lecture seule de Gestion Loyers</div>
+  <div class="version">v1.1 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
@@ -90,7 +90,7 @@
   <button class="bouton" id="btnEnvoyer" disabled onclick="envoyer()">Envoyer</button>
 </div>
 
-<script src="graph-auth.js?v=1.0"></script>
+<script src="graph-auth.js?v=1.1"></script>
 <script src="graph-storage.js?v=1.0"></script>
 <script src="liste-edl.js?v=1.0"></script>
 <script>
@@ -113,16 +113,32 @@ function echapper(s) {
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+/* v1.1 — reconnexion a la demande : on efface le jeton hors d'usage avant
+   de repartir, sans quoi estConnecte() continuerait de le croire bon. */
+async function reconnecter() {
+  try { seDeconnecter(); } catch (e) { /* rien a effacer */ }
+  texte('etat', 'Connexion a Microsoft...');
+  await demarrerConnexion();
+}
+
 async function recharger() {
   texte('etat', 'Lecture des fichiers OneDrive…');
   document.getElementById('liste').innerHTML = '';
   document.getElementById('avertissements').innerHTML = '';
 
   try {
-    if (!estConnecte()) {
-      texte('etat', 'Connexion à Microsoft…');
+    /* v1.1 — UN JETON PRESENT N'EST PAS UN JETON VALABLE.
+
+       estConnecte() ne verifie que la PRESENCE du jeton dans le stockage,
+       jamais sa date. Voyant un jeton perime, l'ecran sautait la connexion
+       et attaquait la lecture, qui echouait sur « Jeton Microsoft absent ou
+       expire ». obtenirJetonValide(), lui, tente le renouvellement et rend
+       null s'il n'y parvient pas : c'est la seule reponse qui fasse foi. */
+    const jeton = await obtenirJetonValide();
+    if (!jeton) {
+      texte('etat', 'Connexion a Microsoft...');
       await demarrerConnexion();
-      return;                       // la page se recharge après le retour
+      return;                       // la page revient par index.html
     }
 
     const r = await chargerListeEDL();
@@ -141,7 +157,14 @@ async function recharger() {
     dessiner();
 
   } catch (e) {
-    texte('etat', `La liste n'a pas pu être établie — ${echapper(e.message || e)}.`,
+    const message = String((e && e.message) || e);
+    const jetonEnCause = /[Jj]eton|401|token/.test(message);
+    texte('etat',
+      `La liste n'a pas pu etre etablie — ${echapper(message)}.` +
+      (jetonEnCause
+        ? ` <button class="bouton" style="margin-top:10px"
+             onclick="reconnecter()">Se reconnecter a Microsoft</button>`
+        : ''),
       'encart alerte');
     document.getElementById('compte').textContent = '—';
     document.getElementById('btnEnvoyer').disabled = true;
