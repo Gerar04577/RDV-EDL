@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RDV EDL</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F0997B">
+<!-- index.html — RDV EDL v1.1 — 18/09/2026
+
+     CETTE PAGE EXISTE POUR UNE RAISON PRÉCISE.
+
+     L'inscription Entra ne déclare qu'une seule adresse de retour pour cette
+     application : https://gerar04577.github.io/RDV-EDL/ — c'est-à-dire ce
+     fichier. Microsoft renvoie donc toujours ici après la connexion, quelle
+     que soit la page d'où l'on partait.
+
+     Sans ce fichier, GitHub Pages répondrait « 404 » au retour de connexion.
+     Elle achève l'échange du jeton, puis renvoie vers la page de départ,
+     mémorisée avant le détour. -->
+<style>
+  :root { --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4; --bord: #E3D9D4; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--fond); color: #2B2B2B; }
+  header { background: var(--corail); color: var(--fonce); padding: 22px 16px 18px; }
+  header h1 { margin: 0; font-size: 21px; }
+  header .version { font-size: 12px; opacity: .8; }
+  main { padding: 16px 14px; max-width: 560px; margin: 0 auto; }
+  .encart { background: #fff; border: 1px solid var(--bord); border-radius: 10px;
+            padding: 13px; margin: 12px 0; font-size: 14px; line-height: 1.5; }
+  a.bouton { display: block; text-align: center; text-decoration: none;
+             padding: 15px; margin: 10px 0; border-radius: 10px;
+             background: var(--fonce); color: #fff; font-size: 16px; font-weight: 600; }
+  a.bouton .sous { display: block; font-size: 12.5px; font-weight: 400;
+                   opacity: .85; margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RDV EDL</h1>
+  <div class="version">v1.1 — rendez-vous d'états des lieux</div>
+</header>
+
+<main>
+  <div id="etat" class="encart">Ouverture…</div>
+
+  <a class="bouton" href="locataires.html">Locataires à inviter
+    <span class="sous">la liste, et l'envoi des invitations</span></a>
+
+  <a class="bouton" href="admin.html">Ouvrir des journées
+    <span class="sous">les créneaux proposés aux locataires</span></a>
+</main>
+
+<script src="graph-auth.js?v=1.1"></script>
+<script>
+(async function () {
+  const etat = document.getElementById('etat');
+  try {
+    const revenu = await traiterRetourConnexion();
+    if (revenu) {
+      /* v1.1 — LE RENVOI NE SUIT QUE DES PAGES CONNUES.
+
+         La destination vient de sessionStorage. Y placer une adresse
+         extérieure — « //autre-site.be » suffirait — aurait fait partir la
+         page ailleurs juste après une connexion réussie, au moment précis
+         où l'on est le moins méfiant. On n'accepte que cette liste. */
+      const PAGES_CONNUES = ['locataires.html', 'admin.html', 'index.html'];
+      let page = 'locataires.html';
+      try {
+        const memorisee = sessionStorage.getItem(PAGE_DEPART_KEY);
+        sessionStorage.removeItem(PAGE_DEPART_KEY);
+        if (PAGES_CONNUES.includes(memorisee)) page = memorisee;
+      } catch (e) { /* mode privé : page par défaut */ }
+      etat.textContent = 'Connexion réussie, retour à la page…';
+      window.location.replace(page);
+      return;
+    }
+    etat.textContent = estConnecte()
+      ? 'Connecté à OneDrive.'
+      : "Non connecté — la connexion se fera à l'ouverture d'un écran.";
+  } catch (e) {
+    etat.textContent = 'La connexion a échoué — ' + (e.message || e);
+  }
+})();
+</script>
+</body>
+</html>

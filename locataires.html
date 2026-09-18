@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RDV EDL — Locataires</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F0997B">
+<!-- locataires.html — RDV EDL v1.0 — 18/09/2026 -->
+<style>
+  :root {
+    --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
+    --rouge: #C0392B; --vert: #1D9E75; --gris: #8A8A8A; --bord: #E3D9D4;
+  }
+  * { box-sizing: border-box; -webkit-text-size-adjust: 100%; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--fond); color: #2B2B2B; padding: 0 0 90px; }
+  header { background: var(--corail); color: var(--fonce); padding: 18px 16px 14px;
+           position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 19px; }
+  header .version { font-size: 12px; opacity: .8; }
+  main { padding: 14px 12px; max-width: 760px; margin: 0 auto; }
+  .bouton { display: block; width: 100%; padding: 13px; margin: 8px 0; border: 0;
+            border-radius: 10px; background: var(--fonce); color: #fff;
+            font-size: 15px; font-weight: 600; cursor: pointer; }
+  .bouton.clair { background: #fff; color: var(--fonce); border: 1.5px solid var(--fonce); }
+  .bouton:disabled { background: var(--gris); cursor: not-allowed; }
+  .encart { background: #fff; border: 1px solid var(--bord); border-radius: 10px;
+            padding: 12px; margin: 10px 0; font-size: 14px; line-height: 1.5; }
+  .encart.alerte { border-color: var(--rouge); background: #FDF3F2; color: var(--rouge); }
+  .groupe { margin-top: 18px; }
+  .groupe h2 { font-size: 15px; color: var(--fonce); margin: 0 0 6px;
+               border-bottom: 2px solid var(--corail); padding-bottom: 4px; }
+  .ligne { display: flex; gap: 10px; align-items: flex-start; background: #fff;
+           border: 1px solid var(--bord); border-radius: 9px; padding: 10px; margin: 6px 0; }
+  .ligne.sans-adresse { border-color: var(--rouge); background: #FDF3F2; }
+  .ligne input[type=checkbox] { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 auto; }
+  .ligne .corps { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.45; }
+  .ligne .nom { font-weight: 700; }
+  .ligne .meta { color: var(--gris); font-size: 12px; }
+  .etiq { display: inline-block; padding: 1px 7px; border-radius: 20px;
+          font-size: 11px; font-weight: 700; margin-right: 6px; }
+  .etiq.edls { background: #FBE6DF; color: #8C3A18; }
+  .etiq.edle { background: #DFF2EB; color: #14654C; }
+  .rouge { color: var(--rouge); font-weight: 600; }
+  .barre { position: fixed; left: 0; right: 0; bottom: 0; background: #fff;
+           border-top: 1px solid var(--bord); padding: 10px 12px;
+           padding-bottom: calc(10px + env(safe-area-inset-bottom));
+           display: flex; gap: 10px; align-items: center; }
+  .barre .compte { font-size: 13px; flex: 1; }
+  .barre button { width: auto; margin: 0; padding: 12px 18px; }
+  details.aide { margin: 10px 0; }
+  details.aide summary { cursor: pointer; font-weight: 600; color: var(--fonce); }
+  details.aide div { font-size: 13.5px; line-height: 1.55; padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RDV EDL — Locataires à inviter</h1>
+  <div class="version">v1.0 — lecture seule de Gestion Loyers</div>
+</header>
+
+<main>
+  <details class="aide">
+    <summary>Mode d'emploi</summary>
+    <div>
+      <p>Cet écran lit deux fichiers de Gestion Loyers dans OneDrive et n'y écrit
+         jamais rien : le dossier de rentrée de l'année, et le fichier du mois en
+         cours. Il en tire la liste des personnes à inviter.</p>
+      <p>Une ligne <b>EDLS</b> est un état des lieux de sortie, une ligne
+         <b>EDLE</b> une entrée. Une unité en départ produit les deux, dès que le
+         remplaçant est connu.</p>
+      <p>Les lignes <span class="rouge">en rouge</span> n'ont pas d'adresse
+         exploitable : elles ne peuvent pas être cochées. Corrigez l'adresse dans
+         Gestion Loyers, puis rechargez ici.</p>
+      <p>Rien ne part tant que vous n'avez pas coché et cliqué sur
+         <b>Envoyer les invitations</b>.</p>
+    </div>
+  </details>
+
+  <div id="etat" class="encart">Chargement…</div>
+  <div id="avertissements"></div>
+  <div id="liste"></div>
+</main>
+
+<div class="barre">
+  <div class="compte" id="compte">—</div>
+  <button class="bouton clair" style="flex:0 0 auto" onclick="recharger()">Recharger</button>
+  <button class="bouton" id="btnEnvoyer" disabled onclick="envoyer()">Envoyer</button>
+</div>
+
+<script src="graph-auth.js?v=1.0"></script>
+<script src="graph-storage.js?v=1.0"></script>
+<script src="liste-edl.js?v=1.0"></script>
+<script>
+/* locataires.html — RDV EDL v1.0 — 18/09/2026
+   Écran de consultation et de sélection. AUCUN ENVOI AUTOMATIQUE : la liste
+   se calcule seule, mais rien ne part sans un clic explicite. */
+
+const WEBHOOK_MAKE = 'https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf';
+
+let lignesEDL = [];
+
+function texte(el, html, classe) {
+  const n = document.getElementById(el);
+  n.innerHTML = html;
+  n.className = classe || 'encart';
+}
+
+function echapper(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+async function recharger() {
+  texte('etat', 'Lecture des fichiers OneDrive…');
+  document.getElementById('liste').innerHTML = '';
+  document.getElementById('avertissements').innerHTML = '';
+
+  try {
+    if (!estConnecte()) {
+      texte('etat', 'Connexion à Microsoft…');
+      await demarrerConnexion();
+      return;                       // la page se recharge après le retour
+    }
+
+    const r = await chargerListeEDL();
+    lignesEDL = r.lignes;
+
+    texte('etat',
+      `Liste établie à partir de <b>${echapper(r.fichiers.rentree)}</b> et ` +
+      `<b>${echapper(r.fichiers.mois)}</b> — ${r.lignes.length} ligne(s).`);
+
+    if (r.avertissements.length) {
+      document.getElementById('avertissements').innerHTML =
+        `<div class="encart alerte"><b>À vérifier :</b><ul style="margin:6px 0 0 -12px">` +
+        r.avertissements.map(a => `<li>${echapper(a)}</li>`).join('') + `</ul></div>`;
+    }
+
+    dessiner();
+
+  } catch (e) {
+    texte('etat', `La liste n'a pas pu être établie — ${echapper(e.message || e)}.`,
+      'encart alerte');
+    document.getElementById('compte').textContent = '—';
+    document.getElementById('btnEnvoyer').disabled = true;
+  }
+}
+
+function dessiner() {
+  const parImmeuble = {};
+  lignesEDL.forEach((l, i) => {
+    (parImmeuble[l.immeuble] = parImmeuble[l.immeuble] || []).push({ l, i });
+  });
+
+  document.getElementById('liste').innerHTML = Object.keys(parImmeuble).sort().map(nom => `
+    <div class="groupe">
+      <h2>${echapper(nom)}</h2>
+      ${parImmeuble[nom].map(({ l, i }) => `
+        <label class="ligne${l.adresseManquante ? ' sans-adresse' : ''}">
+          <input type="checkbox" data-i="${i}" ${l.adresseManquante ? 'disabled' : ''}
+                 onchange="compter()">
+          <div class="corps">
+            <div>
+              <span class="etiq ${l.type.toLowerCase()}">${l.type}</span>
+              <span class="nom">${echapper(l.nom)}</span>
+            </div>
+            <div class="meta">${echapper(l.studio)}</div>
+            <div class="${l.adresseManquante ? 'rouge' : 'meta'}">
+              ${l.adresseManquante ? 'aucune adresse exploitable — à corriger dans Gestion Loyers'
+                                   : echapper(l.email)}
+            </div>
+            ${l.type === 'EDLS' && l.sourceSortant === 'instantané'
+              ? '<div class="meta">sortant lu dans l\'instantané (unité déjà versée)</div>' : ''}
+          </div>
+        </label>`).join('')}
+    </div>`).join('');
+
+  compter();
+}
+
+function selection() {
+  return Array.from(document.querySelectorAll('input[type=checkbox]:checked'))
+    .map(c => lignesEDL[Number(c.dataset.i)]);
+}
+
+function compter() {
+  const n = selection().length;
+  const sansAdresse = lignesEDL.filter(l => l.adresseManquante).length;
+  document.getElementById('compte').innerHTML =
+    `${n} sélectionné(s) sur ${lignesEDL.length}` +
+    (sansAdresse ? ` — <span class="rouge">${sansAdresse} sans adresse</span>` : '');
+  document.getElementById('btnEnvoyer').disabled = n === 0;
+}
+
+async function envoyer() {
+  const choisis = selection();
+  if (!choisis.length) return;
+  if (!confirm(`Envoyer ${choisis.length} invitation(s) ?`)) return;
+
+  const btn = document.getElementById('btnEnvoyer');
+  btn.disabled = true;
+  texte('etat', `Envoi de ${choisis.length} invitation(s)…`);
+
+  try {
+    const res = await fetch(WEBHOOK_MAKE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'inviter', locataires: choisis }),
+    });
+    const corps = await res.text();
+    if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
+    texte('etat', `Envoi accepté par Make — réponse : ${echapper(corps)}.`);
+  } catch (e) {
+    texte('etat',
+      `L'envoi a échoué — ${echapper(e.message || e)}. Aucune invitation n'est ` +
+      `partie, ou seulement une partie : vérifiez l'historique du scénario dans Make.`,
+      'encart alerte');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+(async function demarrer() {
+  await traiterRetourConnexion();
+  recharger();
+})();
+</script>
+</body>
+</html>
