@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v2.4 — 19/09/2026
+<!-- admin.html — RDV EDL v2.6 — 19/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -44,6 +44,13 @@
   .champ input { width:150px; padding:9px; border:1px solid var(--bord);
                  border-radius:8px; font-size:15px; background:#fff; }
   .champ input[type=number] { width:74px; text-align:center; }
+  .plage { display:flex; gap:12px; background:#fff; border:2px solid var(--corail);
+           border-radius:10px; padding:12px; margin:10px 0; }
+  .plage > div { flex:1; }
+  .plage label { display:block; font-size:12px; text-transform:uppercase;
+                 color:var(--fonce); font-weight:700; margin-bottom:4px; }
+  .plage input { width:100%; padding:10px; border:1px solid var(--bord);
+                 border-radius:8px; font-size:15px; background:#fff; }
   .bouton { display:block; width:100%; padding:14px; margin:10px 0; border:0;
             border-radius:10px; background:var(--fonce); color:#fff;
             font-size:16px; font-weight:600; cursor:pointer; }
@@ -70,7 +77,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v2.4 — journées mixtes</div>
+  <div class="version">v2.6 — journées mixtes</div>
 </header>
 
 <main>
@@ -104,12 +111,31 @@
   </div>
 </details>
 
-<h2>Les bornes</h2>
+<!-- v2.6 — LES DEUX BORNES DE LA PLAGE SONT MAINTENANT ENSEMBLE.
 
-<div class="champ">
-  <label for="debut">Premier jour</label>
-  <input autocomplete="off" type="date" id="debut" value="2026-08-10">
+     La v2.5 alignait cinq champs de date a la file : « Premier jour », puis
+     « Sorties denses jusqu'au », puis trois autres, et « Dernier jour » tout
+     en bas. On saisit naturellement « du ... au ... » dans les deux premiers
+     — et le second n'etait pas la fin de la plage mais la fin de la periode
+     dense. Le calendrier devenait faux sans que rien ne l'explique.
+
+     La plage forme desormais un bloc a part, ses deux champs cote a cote. -->
+
+<h2>La plage à ouvrir</h2>
+
+<div class="plage">
+  <div>
+    <label for="debut">Du</label>
+    <input autocomplete="off" type="date" id="debut" value="2026-08-10">
+  </div>
+  <div>
+    <label for="fin">au</label>
+    <input autocomplete="off" type="date" id="fin" value="2026-09-08">
+  </div>
 </div>
+
+<h2>Les périodes, à l'intérieur de la plage</h2>
+
 <div class="champ">
   <label for="borne1">Sorties denses jusqu'au</label>
   <input autocomplete="off" type="date" id="borne1" value="2026-08-25">
@@ -121,10 +147,6 @@
 <div class="champ">
   <label for="debutEntrees">Entrées à partir du</label>
   <input autocomplete="off" type="date" id="debutEntrees" value="2026-08-30">
-</div>
-<div class="champ">
-  <label for="fin">Dernier jour</label>
-  <input autocomplete="off" type="date" id="fin" value="2026-09-08">
 </div>
 
 <h2>Les plafonds par journée</h2>
@@ -421,12 +443,22 @@ async function envoyer(){
     el(id).addEventListener("input", recalculer);
   });
 
-/* v2.4 — CHROME RESTAURE LES CHAMPS AU RECHARGEMENT.
-   Les valeurs saisies revenaient par-dessus celles ecrites dans la page,
-   meme apres Ctrl+F5 : on rechargeait en croyant repartir a zero, et une
-   borne deplacee restait en place sans qu'on comprenne pourquoi.
-   autocomplete="off" l'empeche ; ce rappel des valeurs de reference au
-   chargement le garantit, quel que soit le navigateur. */
+/* v2.5 — LA RESTAURATION DE CHROME PASSE APRES LE SCRIPT.
+
+   La v2.4 appelait valeursParDefaut() a la fin du script, et
+   autocomplete="off" sur chaque champ. Insuffisant : Chrome restaure les
+   valeurs saisies APRES l'execution du script, donc par-dessus. Une borne
+   deplacee revenait a chaque rechargement, Ctrl+F5 compris.
+
+   L'evenement pageshow part, lui, APRES la restauration. Son drapeau
+   « persisted » distingue les deux cas :
+     - faux  : vraie ouverture de page -> on impose les valeurs de reference
+     - vrai  : simple retour d'onglet  -> on ne touche a rien, sans quoi les
+               reglages en cours seraient effaces sous les doigts. */
+window.addEventListener("pageshow", function(ev){
+  if (!ev.persisted) valeursParDefaut();
+});
+
 valeursParDefaut();
 </script>
 </body>
