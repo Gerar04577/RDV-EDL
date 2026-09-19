@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v2.2 — 19/09/2026
+<!-- admin.html — RDV EDL v2.3 — 19/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -70,7 +70,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v2.2 — journées mixtes</div>
+  <div class="version">v2.3 — journées mixtes</div>
 </header>
 
 <main>
@@ -141,6 +141,8 @@
   <label for="maxEntrees">Entrées</label>
   <input type="number" id="maxEntrees" value="4" min="0" max="8">
 </div>
+
+<button class="bouton clair" onclick="valeursParDefaut()">Revenir aux valeurs de référence</button>
 
 <div class="encart" id="etat">Le calendrier se recalcule à chaque changement.</div>
 
@@ -228,6 +230,19 @@ function composerCalendrier(b){
            tronque: tronque, arreteAu: iso };
 }
 
+/* v2.3 — les valeurs de reference, en un clic. Sans cela, retrouver les huit
+   reglages d'origine apres une fausse manoeuvre demandait de recharger la
+   page — ce qui n'est pas evident quand on ne sait pas que les defauts y
+   sont inscrits. */
+var REFERENCE = { debut:"2026-08-10", borne1:"2026-08-25", borne2:"2026-08-31",
+                  debutEntrees:"2026-08-30", fin:"2026-09-08",
+                  maxDense:"5", maxRalenti:"2", maxEntrees:"4" };
+
+function valeursParDefaut(){
+  Object.keys(REFERENCE).forEach(function(id){ el(id).value = REFERENCE[id]; });
+  recalculer();
+}
+
 function bornes(){
   return {
     debut: el("debut").value, fin: el("fin").value,
@@ -286,9 +301,19 @@ function recalculer(){
     el("calendrier").innerHTML = ""; el("compte").textContent = "—"; return;
   }
 
+  /* v2.3 — LE RESUME RAPPELLE LES BORNES EMPLOYEES.
+     Cinq champs de date qui se suivent : une valeur saisie dans le mauvais
+     champ passait inapercue, et le calendrier paraissait simplement
+     « bizarre » sans qu'on sache pourquoi. Le resume dit desormais d'ou
+     vient le resultat. */
   var resume = n + " journée" + (n>1?"s":"") + " — <b>" + calendrier.placesEDLS +
     "</b> place" + (calendrier.placesEDLS>1?"s":"") + " de sortie et <b>" +
-    calendrier.placesEDLE + "</b> d'entrée.";
+    calendrier.placesEDLE + "</b> d'entrée." +
+    '<div style="margin-top:8px; font-size:12.5px; color:#666">' +
+    "Du " + enFrancais(b.debut) + " au " + enFrancais(b.fin) + " · " +
+    b.maxDense + " sorties/jour jusqu'au " + enFrancais(b.borne1) + " · " +
+    b.maxRalenti + " sorties/jour jusqu'au " + enFrancais(b.borne2) + " · " +
+    b.maxEntrees + " entrées/jour dès le " + enFrancais(b.debutEntrees) + "</div>";
   if (calendrier.tronque){
     montrer("ko", resume + " <b>Plage trop longue :</b> le calcul s'est arrêté " +
       "au " + calendrier.arreteAu + ". Rapprochez le dernier jour.");
