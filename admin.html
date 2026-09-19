@@ -3,259 +3,400 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="RDV EDL">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
-<title>RDV EDL — Administration</title>
+<meta name="theme-color" content="#F0997B">
+<!-- admin.html — RDV EDL v2.2 — 19/09/2026
+
+     REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
+     type, avec une cle « date_heure » qui ne portait pas le type. Deux
+     consequences :
+
+     1. Ouvrir la meme date en sortie puis en entree faisait entrer en
+        collision les creneaux de 09h00 et 15h00 — les deux grilles
+        commencent a 09:00. Avec Overwrite=No, la seconde ouverture etait
+        ignoree EN SILENCE.
+     2. Fin aout, les deux vagues se croisent : une journee doit pouvoir
+        porter des sorties ET des entrees, ce qui etait impossible.
+
+     Desormais : la cle porte le type, une journee est mixte, et tout le
+     calendrier se calcule d'un coup a partir des bornes saisies. -->
 <style>
-:root{
-  --corail:#F0997B; --corail-clair:#FAECE7; --corail-fonce:#4A1B0C; --corail-bord:#D85A30;
-  --texte:#1c1c1a; --texte-doux:#5F5E5A; --bord:#D3D1C7; --fond:#F7F6F3; --blanc:#fff;
-  --vert:#EAF3DE; --vert-texte:#173404; --rouge:#FCEBEB; --rouge-texte:#501313;
-}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:var(--fond);color:var(--texte);font-size:16px;line-height:1.5;
-  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
-header{background:var(--corail);padding:18px 16px 16px;color:var(--corail-fonce)}
-header h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.5px}
-header .v{font-size:12px;opacity:.75;margin-top:2px}
-main{padding:16px;max-width:560px;margin:0 auto}
-.carte{background:var(--blanc);border:1px solid var(--bord);border-radius:12px;padding:16px;margin-bottom:14px}
-.carte h2{margin:0 0 14px;font-size:16px;font-weight:600}
-label{display:block;font-size:13px;color:var(--texte-doux);margin:0 0 4px}
-input,select{width:100%;height:46px;padding:0 12px;font-size:16px;font-family:inherit;
-  border:1px solid var(--bord);border-radius:8px;background:var(--blanc);color:var(--texte)}
-.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-button{width:100%;min-height:48px;font-size:16px;font-family:inherit;font-weight:600;
-  border-radius:8px;border:1px solid var(--corail-bord);background:var(--corail);
-  color:var(--corail-fonce);cursor:pointer}
-button:active{opacity:.8}
-button.secondaire{background:var(--blanc);border-color:var(--bord);color:var(--texte);font-weight:400}
-.apercu{background:var(--corail-clair);border-radius:8px;padding:12px;margin:12px 0}
-.apercu p{margin:0 0 8px;font-size:13px;color:var(--corail-fonce)}
-.pastilles{display:flex;flex-wrap:wrap;gap:8px}
-.pastille{background:var(--blanc);border:1px solid var(--corail-bord);border-radius:6px;
-  padding:6px 12px;font-size:15px;color:var(--corail-fonce)}
-#etat{margin-top:12px;padding:12px;border-radius:8px;font-size:14px;display:none}
-#etat.ok{display:block;background:var(--vert);color:var(--vert-texte)}
-#etat.ko{display:block;background:var(--rouge);color:var(--rouge-texte)}
-#etat.attente{display:block;background:var(--fond);color:var(--texte-doux)}
-details{background:var(--blanc);border:1px solid var(--bord);border-radius:12px;padding:0;margin-bottom:14px}
-summary{padding:16px;font-size:16px;font-weight:600;cursor:pointer;list-style:none}
-summary::-webkit-details-marker{display:none}
-summary::after{content:"+";float:right;font-weight:400;color:var(--texte-doux)}
-details[open] summary::after{content:"\2212"}
-.aide{padding:0 16px 16px;font-size:14px;color:var(--texte-doux)}
-.aide h3{font-size:14px;color:var(--texte);margin:16px 0 6px}
-.aide ol{margin:0;padding-left:20px}
-.aide li{margin-bottom:6px}
-footer{padding:0 16px 32px;max-width:560px;margin:0 auto}
+  :root { --corail:#F0997B; --fonce:#4A1B0C; --fond:#FAF6F4; --bord:#E3D9D4;
+          --vert:#1D9E75; --rouge:#C0392B; --gris:#8A8A8A;
+          --sortie:#FBE6DF; --sortie-t:#8C3A18; --entree:#DFF2EB; --entree-t:#14654C; }
+  * { box-sizing:border-box; -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         background:var(--fond); color:#2B2B2B; padding:0 0 96px; }
+  header { background:var(--corail); color:var(--fonce); padding:18px 16px 14px;
+           position:sticky; top:0; z-index:10; }
+  header h1 { margin:0; font-size:19px; }
+  header .version { font-size:12px; opacity:.8; }
+  main { padding:14px 12px; max-width:760px; margin:0 auto; }
+  .encart { background:#fff; border:1px solid var(--bord); border-radius:10px;
+            padding:13px; margin:12px 0; font-size:14px; line-height:1.55; }
+  .encart.ok { border-color:var(--vert); background:#EEF9F5; }
+  .encart.ko { border-color:var(--rouge); background:#FDF3F2; color:var(--rouge); }
+  h2 { font-size:15px; color:var(--fonce); margin:20px 0 6px;
+       border-bottom:2px solid var(--corail); padding-bottom:4px; }
+  .champ { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:14px; }
+  .champ label { flex:1; }
+  .champ input { width:150px; padding:9px; border:1px solid var(--bord);
+                 border-radius:8px; font-size:15px; background:#fff; }
+  .champ input[type=number] { width:74px; text-align:center; }
+  .bouton { display:block; width:100%; padding:14px; margin:10px 0; border:0;
+            border-radius:10px; background:var(--fonce); color:#fff;
+            font-size:16px; font-weight:600; cursor:pointer; }
+  .bouton.clair { background:#fff; color:var(--fonce); border:1.5px solid var(--fonce); }
+  .bouton:disabled { background:var(--gris); cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td { padding:7px 6px; border-bottom:1px solid var(--bord); text-align:left; }
+  th { color:var(--fonce); font-size:12px; text-transform:uppercase; }
+  .puce { display:inline-block; padding:1px 8px; border-radius:20px;
+          font-size:11.5px; font-weight:700; margin-right:5px; }
+  .puce.s { background:var(--sortie); color:var(--sortie-t); }
+  .puce.e { background:var(--entree); color:var(--entree-t); }
+  details summary { cursor:pointer; font-weight:600; color:var(--fonce); }
+  details div { font-size:13.5px; line-height:1.6; padding-top:8px; }
+  .barre { position:fixed; left:0; right:0; bottom:0; background:#fff;
+           border-top:1px solid var(--bord); padding:10px 12px;
+           padding-bottom:calc(10px + env(safe-area-inset-bottom));
+           display:flex; gap:10px; align-items:center; }
+  .barre .compte { flex:1; font-size:13px; }
+  .barre button { width:auto; margin:0; padding:12px 18px; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>RDV EDL</h1>
-  <div class="v">Administration &mdash; v1.0</div>
+  <h1>RDV EDL — Ouvrir les journées</h1>
+  <div class="version">v2.2 — journées mixtes</div>
 </header>
 
 <main>
 
-<div class="carte">
-  <h2>Ouvrir une journ&eacute;e</h2>
-
-  <div class="duo">
-    <div>
-      <label for="date">Date</label>
-      <input type="date" id="date">
-    </div>
-    <div>
-      <label for="type">Type</label>
-      <select id="type">
-        <option value="EDLS">EDLS &mdash; 1 h 30</option>
-        <option value="EDLE">EDLE &mdash; 2 h 30</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="duo">
-    <div>
-      <label for="debut">Premi&egrave;re heure</label>
-      <input type="time" id="debut" value="09:00">
-    </div>
-    <div>
-      <label for="nombre">Nombre de cr&eacute;neaux</label>
-      <input type="number" id="nombre" min="1" max="8" value="5">
-    </div>
-  </div>
-
-  <div class="apercu">
-    <p id="apercu-titre">Cr&eacute;neaux qui seront ouverts</p>
-    <div class="pastilles" id="apercu"></div>
-  </div>
-
-  <button id="envoyer">Ouvrir ces cr&eacute;neaux</button>
-  <div id="etat"></div>
+<div class="encart" style="display:flex; gap:8px; padding:8px">
+  <a href="index.html" style="flex:1; text-align:center; text-decoration:none;
+     color:var(--fonce); font-weight:600; padding:6px">Accueil</a>
+  <a href="locataires.html" style="flex:1; text-align:center; text-decoration:none;
+     color:var(--fonce); font-weight:600; padding:6px">Locataires</a>
 </div>
 
 <details>
   <summary>Mode d'emploi</summary>
-  <div class="aide">
-
-    <h3>&Agrave; quoi sert cet &eacute;cran</h3>
-    <p>Il ouvre les journ&eacute;es pendant lesquelles vous &ecirc;tes disponible. Les locataires ne
-    voient que les cr&eacute;neaux ouverts ici, et ne peuvent rien cr&eacute;er eux-m&ecirc;mes.</p>
-
-    <h3>Marche &agrave; suivre</h3>
-    <ol>
-      <li>Choisissez la date de la journ&eacute;e &agrave; ouvrir.</li>
-      <li>Choisissez le type : EDLS pour les sorties, EDLE pour les entr&eacute;es.</li>
-      <li>V&eacute;rifiez les heures calcul&eacute;es, affich&eacute;es juste en dessous.</li>
-      <li>Touchez &laquo;&nbsp;Ouvrir ces cr&eacute;neaux&nbsp;&raquo;.</li>
-    </ol>
-
-    <h3>Comment les heures sont calcul&eacute;es</h3>
-    <p>Un EDLS dure 1 h 30, un EDLE 2 h 30. Une demi-heure de trajet est ajout&eacute;e entre deux
-    rendez-vous. Le pas est donc de 2 heures en EDLS et de 3 heures en EDLE. La premi&egrave;re
-    heure est 09:00 par d&eacute;faut ; vous pouvez la modifier.</p>
-
-    <h3>Rouvrir une journ&eacute;e d&eacute;j&agrave; ouverte</h3>
-    <p>Sans danger. Les cr&eacute;neaux existants sont conserv&eacute;s tels quels, avec leurs
-    r&eacute;servations. Seuls les cr&eacute;neaux nouveaux sont ajout&eacute;s. C'est ainsi que
-    l'on passe d'une journ&eacute;e de 4 places &agrave; une journ&eacute;e de 5.</p>
-
-    <h3>Combien de journ&eacute;es ouvrir</h3>
-    <p>&Eacute;talez largement : une journ&eacute;e &agrave; moiti&eacute; vide ne co&ucirc;te rien.
-    Gardez en revanche peu de places sur les derni&egrave;res dates, car c'est leur raret&eacute;
-    qui pousse les locataires &agrave; r&eacute;server t&ocirc;t.</p>
-
-    <h3>La r&egrave;gle des six jours</h3>
-    <p>Un locataire entrant ne voit que les cr&eacute;neaux situ&eacute;s au moins six jours
-    apr&egrave;s la sortie de son studio. Tant que le sortant n'a pas r&eacute;serv&eacute;,
-    l'entrant ne voit rien et re&ccedil;oit un message d'attente.</p>
-
-    <h3>En cas de blocage</h3>
-    <p>Si les r&eacute;servations ne passent plus, ouvrez Make et v&eacute;rifiez qu'aucune
-    ex&eacute;cution n'est rest&eacute;e en erreur : une ex&eacute;cution en erreur non
-    trait&eacute;e bloque toutes les suivantes.</p>
-
+  <div>
+    <p>Cet écran ouvre d'un coup toutes les journées d'une saison. Vous fixez
+       les bornes, vous regardez le calendrier proposé, puis vous l'envoyez.</p>
+    <p><b>Les trois périodes.</b> Jusqu'à la première borne, les journées sont
+       remplies de sorties. Entre la première et la deuxième, le rythme se
+       calme. À partir de la troisième borne, les entrées commencent — et sur
+       les journées qui portent les deux, <b>les sorties passent devant</b>,
+       les entrées occupant ce qui reste.</p>
+    <p><b>Les heures ne se saisissent pas.</b> Elles se calculent : première
+       visite à 09:00, puis chaque rendez-vous suivi de sa demi-heure de route.
+       Une sortie occupe 1h30, une entrée 2h30. Rien ne s'entame après 18:00.</p>
+    <p><b>On ouvre large.</b> Il y aura beaucoup plus de places que de
+       locataires : c'est voulu. Un créneau non réservé ne coûte rien, et la
+       rareté des dernières dates pousse à réserver tôt.</p>
+    <p><b>Réouvrir est sans danger.</b> Un créneau déjà présent n'est pas
+       recréé et les réservations existantes ne sont pas touchées. Seuls les
+       créneaux nouveaux s'ajoutent.</p>
   </div>
 </details>
 
-<footer>
-  <button class="secondaire" onclick="window.open('https://www.make.com/en/login','_blank')">Ouvrir Make</button>
-</footer>
+<h2>Les bornes</h2>
+
+<div class="champ">
+  <label for="debut">Premier jour</label>
+  <input type="date" id="debut" value="2026-08-10">
+</div>
+<div class="champ">
+  <label for="borne1">Sorties denses jusqu'au</label>
+  <input type="date" id="borne1" value="2026-08-25">
+</div>
+<div class="champ">
+  <label for="borne2">Sorties ralenties jusqu'au</label>
+  <input type="date" id="borne2" value="2026-08-31">
+</div>
+<div class="champ">
+  <label for="debutEntrees">Entrées à partir du</label>
+  <input type="date" id="debutEntrees" value="2026-08-30">
+</div>
+<div class="champ">
+  <label for="fin">Dernier jour</label>
+  <input type="date" id="fin" value="2026-09-08">
+</div>
+
+<h2>Les plafonds par journée</h2>
+
+<div class="champ">
+  <label for="maxDense">Sorties, période dense</label>
+  <input type="number" id="maxDense" value="5" min="0" max="8">
+</div>
+<div class="champ">
+  <label for="maxRalenti">Sorties, période ralentie</label>
+  <input type="number" id="maxRalenti" value="2" min="0" max="8">
+</div>
+<div class="champ">
+  <label for="maxEntrees">Entrées</label>
+  <input type="number" id="maxEntrees" value="4" min="0" max="8">
+</div>
+
+<div class="encart" id="etat">Le calendrier se recalcule à chaque changement.</div>
+
+<h2>Calendrier proposé</h2>
+<div id="calendrier"></div>
 
 </main>
 
+<div class="barre">
+  <div class="compte" id="compte">—</div>
+  <button class="bouton clair" style="flex:0 0 auto" onclick="recalculer()">Recalculer</button>
+  <button class="bouton" id="envoyer" onclick="envoyer()">Envoyer</button>
+</div>
+
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
-var PAS = { EDLS: 120, EDLE: 180 };
+
 var DUREE = { EDLS: 90, EDLE: 150 };
+var ROUTE = 30;               // minutes de trajet entre deux rendez-vous
+var DEBUT_JOURNEE = 9 * 60;   // 09:00
+var DERNIER_DEPART = 18 * 60; // on n'entame plus rien apres 18:00
+
+var calendrier = null;
 
 function el(id){ return document.getElementById(id); }
-
-function deuxChiffres(n){ return (n < 10 ? "0" : "") + n; }
-
-function calculer(){
-  var type = el("type").value;
-  var debut = el("debut").value || "09:00";
-  var nombre = parseInt(el("nombre").value, 10);
-  if (isNaN(nombre) || nombre < 1) nombre = 1;
-  if (nombre > 8) nombre = 8;
-
-  var h = parseInt(debut.split(":")[0], 10);
-  var m = parseInt(debut.split(":")[1], 10);
-  var minutes = h * 60 + m;
-
-  var liste = [];
-  for (var i = 0; i < nombre; i++){
-    var t = minutes + i * PAS[type];
-    liste.push(deuxChiffres(Math.floor(t / 60)) + ":" + deuxChiffres(t % 60));
-  }
-  return liste;
+function hhmm(m){ var h=Math.floor(m/60), r=m%60;
+  return (h<10?"0":"")+h+":"+(r<10?"0":"")+r; }
+function jourSuivant(iso){ var d=new Date(iso+"T12:00:00");
+  d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); }
+function enFrancais(iso){
+  var d = new Date(iso+"T12:00:00");
+  var j = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"][d.getDay()];
+  var m = ["janvier","février","mars","avril","mai","juin","juillet","août",
+           "septembre","octobre","novembre","décembre"][d.getMonth()];
+  return j + " " + d.getDate() + " " + m;
 }
 
-function afficherApercu(){
-  var liste = calculer();
-  var type = el("type").value;
-  var zone = el("apercu");
-  zone.innerHTML = "";
-  for (var i = 0; i < liste.length; i++){
-    var d = document.createElement("div");
-    d.className = "pastille";
-    d.textContent = liste[i];
-    zone.appendChild(d);
+/* Combien de sorties et d'entrees cette journee accepte-t-elle ? */
+function reglesDuJour(iso, b){
+  var edls = 0, edle = 0;
+  if (iso <= b.borne1) edls = b.maxDense;
+  else if (iso <= b.borne2) edls = b.maxRalenti;
+  if (iso >= b.debutEntrees) edle = b.maxEntrees;
+  return { edls: edls, edle: edle };
+}
+
+/* Pose les rendez-vous d'une journee. LES SORTIES PASSENT DEVANT : elles
+   occupent le debut de journee, les entrees prennent ce qui reste. C'est la
+   regle retenue pour les journees a cheval sur les deux vagues. */
+function composerJournee(iso, b){
+  var r = reglesDuJour(iso, b);
+  var creneaux = [], t = DEBUT_JOURNEE;
+
+  function poser(type, plafond){
+    var n = 0;
+    while (n < plafond && t <= DERNIER_DEPART){
+      creneaux.push({
+        cle: iso + "_" + hhmm(t).replace(":","h") + "_" + type,
+        date: iso, heure: hhmm(t), type: type,
+        duree: DUREE[type], etat: "libre"
+      });
+      t += DUREE[type] + ROUTE;
+      n++;
+    }
+    return n;
   }
-  var fin = liste[liste.length - 1].split(":");
-  var finMin = parseInt(fin[0],10) * 60 + parseInt(fin[1],10) + DUREE[type];
-  el("apercu-titre").textContent =
-    liste.length + " cr\u00e9neaux, derni\u00e8re visite termin\u00e9e vers "
-    + deuxChiffres(Math.floor(finMin / 60)) + ":" + deuxChiffres(finMin % 60);
+
+  var nS = poser("EDLS", r.edls);
+  var nE = poser("EDLE", r.edle);
+  return { date: iso, creneaux: creneaux, edls: nS, edle: nE };
+}
+
+function composerCalendrier(b){
+  var jours = [], iso = b.debut, garde = 0, tS = 0, tE = 0, tronque = false;
+  while (iso <= b.fin){
+    /* v2.1 — le garde-fou coupait a 400 journees SANS RIEN DIRE : une plage
+       de deux ans rendait un calendrier incomplet qui avait l'air normal.
+       On le signale desormais. */
+    if (garde++ >= 400){ tronque = true; break; }
+    var j = composerJournee(iso, b);
+    if (j.creneaux.length){ jours.push(j); tS += j.edls; tE += j.edle; }
+    iso = jourSuivant(iso);
+  }
+  return { jours: jours, placesEDLS: tS, placesEDLE: tE,
+           tronque: tronque, arreteAu: iso };
+}
+
+function bornes(){
+  return {
+    debut: el("debut").value, fin: el("fin").value,
+    borne1: el("borne1").value, borne2: el("borne2").value,
+    debutEntrees: el("debutEntrees").value,
+    maxDense: Number(el("maxDense").value),
+    maxRalenti: Number(el("maxRalenti").value),
+    maxEntrees: Number(el("maxEntrees").value)
+  };
 }
 
 function montrer(classe, texte){
-  var e = el("etat");
-  e.className = classe;
-  e.textContent = texte;
+  var n = el("etat"); n.className = "encart " + classe; n.innerHTML = texte;
 }
 
-el("type").addEventListener("change", function(){
-  el("nombre").value = (el("type").value === "EDLS") ? 5 : 4;
-  afficherApercu();
-});
-el("debut").addEventListener("change", afficherApercu);
-el("nombre").addEventListener("input", afficherApercu);
+/* v2.2 — TOUTES LES BORNES SONT CONTROLEES, PAS SEULEMENT LES DEUX EXTREMES.
+   Un champ de date vide rend la comparaison « iso <= "" » fausse partout :
+   plus aucune sortie ne s'ouvrait, et rien ne le signalait. Un plafond vide
+   valait zero de la meme facon. */
+function verifierBornes(b){
+  var manque = [];
+  if (!b.debut) manque.push("le premier jour");
+  if (!b.fin) manque.push("le dernier jour");
+  if (!b.borne1) manque.push("la fin de la période dense");
+  if (!b.borne2) manque.push("la fin de la période ralentie");
+  if (!b.debutEntrees) manque.push("le début des entrées");
+  if (manque.length) return "Il manque " + manque.join(", ") + ".";
 
-el("envoyer").addEventListener("click", function(){
-  var date = el("date").value;
-  if (!date){
-    montrer("ko", "Choisissez d'abord une date.");
+  if (b.fin < b.debut) return "Le dernier jour doit venir après le premier.";
+  if (b.borne2 < b.borne1) return "La période ralentie doit se terminer après la période dense.";
+
+  /* v2.2 — ON NE REFUSE QUE CE QUI SE CONTREDIT.
+     Une premiere version refusait aussi qu'une borne depasse le dernier jour,
+     ou que les entrees commencent hors plage. C'etait trop strict : ouvrir
+     seulement les trois premiers jours est legitime — la periode dense
+     s'applique alors a toute la plage. De meme, des bornes situees avant le
+     debut signifient simplement que la periode est deja passee. */
+
+  if (!(b.maxDense > 0) && !(b.maxRalenti > 0) && !(b.maxEntrees > 0))
+    return "Tous les plafonds sont à zéro : aucune journée ne s'ouvrirait.";
+  return null;
+}
+
+function recalculer(){
+  var b = bornes();
+  var souci = verifierBornes(b);
+  if (souci){
+    montrer("ko", souci);
+    el("calendrier").innerHTML = ""; el("compte").textContent = "—";
+    calendrier = null; return;
+  }
+  calendrier = composerCalendrier(b);
+  var n = calendrier.jours.length;
+  if (!n){
+    montrer("ko", "Aucune journée ne s'ouvre avec ces bornes. Vérifiez les plafonds.");
+    el("calendrier").innerHTML = ""; el("compte").textContent = "—"; return;
+  }
+
+  var resume = n + " journée" + (n>1?"s":"") + " — <b>" + calendrier.placesEDLS +
+    "</b> place" + (calendrier.placesEDLS>1?"s":"") + " de sortie et <b>" +
+    calendrier.placesEDLE + "</b> d'entrée.";
+  if (calendrier.tronque){
+    montrer("ko", resume + " <b>Plage trop longue :</b> le calcul s'est arrêté " +
+      "au " + calendrier.arreteAu + ". Rapprochez le dernier jour.");
+  } else {
+    montrer("", resume);
+  }
+
+  var lignes = calendrier.jours.map(function(j){
+    return "<tr><td>" + enFrancais(j.date) + "</td><td>" +
+      (j.edls ? '<span class="puce s">' + j.edls + " sortie" + (j.edls>1?"s":"") + "</span>" : "") +
+      (j.edle ? '<span class="puce e">' + j.edle + " entrée" + (j.edle>1?"s":"") + "</span>" : "") +
+      /* v2.2 — la colonne des heures ne disait pas lesquelles etaient des
+         entrees. Sur une journee mixte, impossible de verifier avant
+         d'envoyer — or c'est justement a cela que ce tableau sert. */
+      "</td><td>" + j.creneaux.map(function(c){
+         return '<span class="puce ' + (c.type === "EDLS" ? "s" : "e") + '">' +
+                c.heure + "</span>";
+      }).join(" ") + "</td></tr>";
+  }).join("");
+
+  el("calendrier").innerHTML =
+    '<div class="encart" style="padding:4px 10px"><table><tr><th>Journée</th>' +
+    "<th>Contenu</th><th>Heures</th></tr>" + lignes + "</table></div>";
+
+  var total = calendrier.placesEDLS + calendrier.placesEDLE;
+  el("compte").textContent = total + " créneaux sur " + n + " journées";
+}
+
+/* Envoi journee par journee : une panne au milieu reste visible et
+   rattrapable, la ou un envoi unique laisserait un doute sur ce qui est
+   passe. Un creneau deja present n'est pas recree. */
+async function envoyer(){
+  if (!calendrier || !calendrier.jours.length){
+    montrer("ko", "Rien à envoyer : recalculez d'abord."); return;
+  }
+  if (calendrier.tronque){
+    montrer("ko", "Plage trop longue : corrigez le dernier jour avant d'envoyer.");
     return;
   }
-  var type = el("type").value;
-  var heures = calculer();
-  var creneaux = [];
-  for (var i = 0; i < heures.length; i++){
-    creneaux.push({
-      cle: date + "_" + heures[i].replace(":", "h"),
-      date: date,
-      heure: heures[i],
-      type: type,
-      duree: DUREE[type],
-      etat: "libre"
-    });
+  var total = calendrier.placesEDLS + calendrier.placesEDLE;
+  if (!confirm("Envoyer " + total + " créneaux sur " +
+      calendrier.jours.length + " journées ?")) return;
+
+  /* v2.1 — LE CALENDRIER EST FIGE PENDANT L'ENVOI.
+     La boucle lisait calendrier.jours[i] a chaque tour, et rien n'empechait
+     de modifier une borne pendant les trente envois : le calendrier etait
+     recalcule sous la boucle, qui envoyait alors des journees d'un calendrier
+     et le compte d'un autre. On travaille sur une copie, et les champs sont
+     verrouilles. */
+  var journees = calendrier.jours.slice();
+  var champs = ["debut","fin","borne1","borne2","debutEntrees",
+                "maxDense","maxRalenti","maxEntrees"];
+  champs.forEach(function(id){ el(id).disabled = true; });
+  el("envoyer").disabled = true;
+  var envoyes = 0, echecs = [];
+
+  for (var i = 0; i < journees.length; i++){
+    var j = journees[i];
+    montrer("", "Envoi… " + (i+1) + " / " + journees.length +
+      " — " + enFrancais(j.date));
+    try {
+      /* v2.2 — UN DELAI SUR CHAQUE ENVOI.
+         Sans lui, une requete restee en suspens bloquait la page pour
+         toujours, champs verrouilles, sans moyen d'en sortir. Trente
+         secondes suffisent largement pour cinq creneaux. */
+      var minuterie = new AbortController();
+      var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
+      var res = await fetch(WEBHOOK, {
+        method: "POST",
+        signal: minuterie.signal,
+        headers: { "Content-Type": "application/json" },
+        /* Le type de tete n'est pas lu par le scenario — chaque creneau
+           porte le sien. Sur une journee mixte, annoncer un seul type
+           serait faux : on envoie « mixte ». */
+        body: JSON.stringify({ action: "ouvrir", date: j.date,
+                               type: (j.edls && j.edle) ? "mixte"
+                                     : (j.edls ? "EDLS" : "EDLE"),
+                               creneaux: j.creneaux })
+      });
+      clearTimeout(echeance);
+      if (res.ok) envoyes += j.creneaux.length;
+      else echecs.push(j.date + " (" + res.status + ")");
+    } catch (e){
+      clearTimeout(echeance);
+      echecs.push(j.date + (e && e.name === "AbortError"
+        ? " (pas de réponse après 30 s)" : " (" + (e.message || e) + ")"));
+    }
   }
 
-  montrer("attente", "Envoi en cours\u2026");
-  el("envoyer").disabled = true;
+  champs.forEach(function(id){ el(id).disabled = false; });
+  el("envoyer").disabled = false;
+  if (!echecs.length){
+    montrer("ok", "Terminé : <b>" + envoyes + "</b> créneaux envoyés sur " +
+      journees.length + " journées. Les créneaux déjà présents ont été ignorés.");
+  } else {
+    montrer("ko", envoyes + " créneaux envoyés, mais " + echecs.length +
+      " journée(s) en échec : " + echecs.join(", ") +
+      ". Relancez l'envoi : les journées déjà passées ne seront pas dupliquées.");
+  }
+}
 
-  fetch(WEBHOOK, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "ouvrir", date: date, type: type, creneaux: creneaux })
-  })
-  .then(function(r){ return r.text().then(function(t){ return { ok: r.ok, texte: t }; }); })
-  .then(function(r){
-    el("envoyer").disabled = false;
-    if (r.ok) montrer("ok", "Journ\u00e9e ouverte : " + creneaux.length + " cr\u00e9neaux envoy\u00e9s.");
-    else montrer("ko", "Refus de Make : " + r.texte);
-  })
-  .catch(function(e){
-    el("envoyer").disabled = false;
-    montrer("ko", "\u00c9chec de l'envoi : " + e.message);
+["debut","fin","borne1","borne2","debutEntrees","maxDense","maxRalenti","maxEntrees"]
+  .forEach(function(id){
+    el(id).addEventListener("change", recalculer);
+    el(id).addEventListener("input", recalculer);
   });
-});
 
-(function(){
-  var d = new Date();
-  el("date").value = d.getFullYear() + "-" + deuxChiffres(d.getMonth()+1) + "-" + deuxChiffres(d.getDate());
-  afficherApercu();
-})();
+recalculer();
 </script>
-
 </body>
 </html>
