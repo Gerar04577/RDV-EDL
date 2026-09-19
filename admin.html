@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v2.3 — 19/09/2026
+<!-- admin.html — RDV EDL v2.4 — 19/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -70,7 +70,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v2.3 — journées mixtes</div>
+  <div class="version">v2.4 — journées mixtes</div>
 </header>
 
 <main>
@@ -108,38 +108,38 @@
 
 <div class="champ">
   <label for="debut">Premier jour</label>
-  <input type="date" id="debut" value="2026-08-10">
+  <input autocomplete="off" type="date" id="debut" value="2026-08-10">
 </div>
 <div class="champ">
   <label for="borne1">Sorties denses jusqu'au</label>
-  <input type="date" id="borne1" value="2026-08-25">
+  <input autocomplete="off" type="date" id="borne1" value="2026-08-25">
 </div>
 <div class="champ">
   <label for="borne2">Sorties ralenties jusqu'au</label>
-  <input type="date" id="borne2" value="2026-08-31">
+  <input autocomplete="off" type="date" id="borne2" value="2026-08-31">
 </div>
 <div class="champ">
   <label for="debutEntrees">Entrées à partir du</label>
-  <input type="date" id="debutEntrees" value="2026-08-30">
+  <input autocomplete="off" type="date" id="debutEntrees" value="2026-08-30">
 </div>
 <div class="champ">
   <label for="fin">Dernier jour</label>
-  <input type="date" id="fin" value="2026-09-08">
+  <input autocomplete="off" type="date" id="fin" value="2026-09-08">
 </div>
 
 <h2>Les plafonds par journée</h2>
 
 <div class="champ">
   <label for="maxDense">Sorties, période dense</label>
-  <input type="number" id="maxDense" value="5" min="0" max="8">
+  <input autocomplete="off" type="number" id="maxDense" value="5" min="0" max="8">
 </div>
 <div class="champ">
   <label for="maxRalenti">Sorties, période ralentie</label>
-  <input type="number" id="maxRalenti" value="2" min="0" max="8">
+  <input autocomplete="off" type="number" id="maxRalenti" value="2" min="0" max="8">
 </div>
 <div class="champ">
   <label for="maxEntrees">Entrées</label>
-  <input type="number" id="maxEntrees" value="4" min="0" max="8">
+  <input autocomplete="off" type="number" id="maxEntrees" value="4" min="0" max="8">
 </div>
 
 <button class="bouton clair" onclick="valeursParDefaut()">Revenir aux valeurs de référence</button>
@@ -421,7 +421,13 @@ async function envoyer(){
     el(id).addEventListener("input", recalculer);
   });
 
-recalculer();
+/* v2.4 — CHROME RESTAURE LES CHAMPS AU RECHARGEMENT.
+   Les valeurs saisies revenaient par-dessus celles ecrites dans la page,
+   meme apres Ctrl+F5 : on rechargeait en croyant repartir a zero, et une
+   borne deplacee restait en place sans qu'on comprenne pourquoi.
+   autocomplete="off" l'empeche ; ce rappel des valeurs de reference au
+   chargement le garantit, quel que soit le navigateur. */
+valeursParDefaut();
 </script>
 </body>
 </html>
