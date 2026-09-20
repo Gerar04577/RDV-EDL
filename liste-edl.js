@@ -1,4 +1,4 @@
-// liste-edl.js — RDV EDL v1.0 — 18/09/2026
+// liste-edl.js — RDV EDL v1.1 — 20/09/2026
 //
 // Construit la liste des personnes à inviter pour un état des lieux, en
 // croisant deux fichiers OneDrive de Gestion Loyers, SANS RIEN Y ÉCRIRE :
@@ -175,6 +175,27 @@ function construireListeEDL(rentree, mois) {
 /* Lecture des deux fichiers, puis croisement. Rend en plus les noms des
    fichiers lus, pour que l'écran puisse les afficher : on doit pouvoir
    vérifier d'un coup d'œil sur quoi la liste repose. */
+/* v1.1 — « illisible » NE DISAIT RIEN.
+   Le message masquait le code HTTP et l'explication de Microsoft : impossible
+   de distinguer un jeton perime (401), un fichier absent (404), un dossier
+   partage inaccessible (422) ou une panne passagere (500). On rapporte
+   desormais ce que Graph a reellement repondu. */
+async function detailReponseEDL(res, nom) {
+  let detail = '';
+  try {
+    const corps = await res.clone().json();
+    detail = (corps && corps.error && (corps.error.message || corps.error.code)) || '';
+  } catch (e) { /* la reponse n'etait pas du JSON */ }
+  const sens = res.status === 401 ? 'jeton refusé, reconnectez-vous'
+             : res.status === 404 ? 'fichier introuvable à cet emplacement'
+             : res.status === 403 ? 'accès refusé à ce dossier'
+             : res.status === 422 ? 'dossier atteint comme un raccourci'
+             : res.status >= 500  ? 'panne passagère chez Microsoft, réessayez'
+             : '';
+  return `${nom} : erreur ${res.status}` + (sens ? ` — ${sens}` : '') +
+         (detail ? ` (${detail})` : '');
+}
+
 async function chargerListeEDL() {
   const annee = anneeRentreeEDL();
   const mois = moisCourantEDL();
@@ -184,13 +205,15 @@ async function chargerListeEDL() {
   const refRentree = await resoudreRefParChemin(LISTE_EDL_RENTREE, false);
   if (!refRentree) throw new Error(`dossier ${LISTE_EDL_RENTREE} introuvable`);
   const resR = await lireFichierDansDossier(refRentree, nomRentree);
-  if (!resR || !resR.ok) throw new Error(`${nomRentree} illisible`);
+  if (!resR) throw new Error(`${nomRentree} : aucune réponse de Microsoft`);
+  if (!resR.ok) throw new Error(await detailReponseEDL(resR, nomRentree));
   const donneesRentree = await resR.json();
 
   const refMois = await resoudreRefParChemin(LISTE_EDL_HISTORIQUE, false);
   if (!refMois) throw new Error(`dossier ${LISTE_EDL_HISTORIQUE} introuvable`);
   const resM = await lireFichierDansDossier(refMois, nomMois);
-  if (!resM || !resM.ok) throw new Error(`${nomMois} illisible`);
+  if (!resM) throw new Error(`${nomMois} : aucune réponse de Microsoft`);
+  if (!resM.ok) throw new Error(await detailReponseEDL(resM, nomMois));
   const donneesMois = await resM.json();
 
   const resultat = construireListeEDL(donneesRentree, donneesMois);
