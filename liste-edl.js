@@ -1,4 +1,4 @@
-// liste-edl.js — RDV EDL v1.1 — 20/09/2026
+// liste-edl.js — RDV EDL v1.2 — 20/09/2026
 //
 // Construit la liste des personnes à inviter pour un état des lieux, en
 // croisant deux fichiers OneDrive de Gestion Loyers, SANS RIEN Y ÉCRIRE :
@@ -121,8 +121,37 @@ function construireListeEDL(rentree, mois) {
     /* --- LE SORTANT ---
        Versée : l'instantané porte l'état d'avant le remplacement.
        Non versée : le mois porte encore le sortant. */
-    const versee = !!l.verseeLe;
-    const sourceSortant = (versee && l.instantane) ? l.instantane : trouve.unite;
+    /* v1.2 — L'INSTANTANE PEUT ETRE PLUS ANCIEN QUE VOS SAISIES.
+
+       Le studio 1 de Nimy a ete verse le 5 septembre : l'instantane a fige
+       l'etat de ce jour-la, avec le bon nom mais AUCUNE adresse — les
+       adresses n'ont ete saisies que le 17. La sortante se retrouvait sans
+       moyen d'etre reconnue, alors que le mois porte bien son adresse.
+
+       Le nom reste celui de l'instantane : lui seul est sur, le mois pouvant
+       deja porter le remplacant. Mais un champ VIDE dans l'instantane ne
+       vaut pas mieux que rien — on va alors le chercher dans le mois. */
+    /* v1.3 — « VERSEE » NE VEUT PAS DIRE « LE MOIS A CHANGE ».
+
+       Le versement vise un mois PRECIS, porte par verseeVers. Le studio 1 de
+       Nimy a ete verse le 05/09 vers 2026-10 : septembre contient donc
+       toujours Eva SMETS et sa vraie adresse. On basculait pourtant sur
+       l'instantane des que verseeLe etait renseigne, sans regarder vers quel
+       mois — et l'instantane, plus ancien que vos saisies, etait muet.
+
+       L'instantane ne sert que si le versement a DEJA touche le mois qu'on
+       lit. Sinon le mois fait foi, nom compris. */
+    const moisLu = moisCourantEDL();
+    const versee = !!l.verseeLe && !!l.verseeVers && l.verseeVers <= moisLu;
+    const instantane = (versee && l.instantane) ? l.instantane : null;
+    const sourceSortant = instantane || trouve.unite;
+
+    function completer(champ) {
+      const depuisInstantane = nettoyerEDL(sourceSortant[champ]);
+      if (depuisInstantane) return { valeur: depuisInstantane, complete: false };
+      const depuisMois = nettoyerEDL(trouve.unite[champ]);
+      return { valeur: depuisMois, complete: !!depuisMois && !!instantane };
+    }
 
     if (versee && !l.instantane) {
       avertissements.push(
@@ -130,20 +159,28 @@ function construireListeEDL(rentree, mois) {
         `mois risque d'être le nouveau locataire. À vérifier à la main.`);
     }
 
-    const nomSortant = nettoyerEDL(sourceSortant.locataire);
+    const nomSortant = completer('locataire').valeur;
     if (nomSortant) {
-      const email = nettoyerEDL(sourceSortant.email);
+      const adresse = completer('email');
+      const garant = completer('emailGarant');
       lignes.push({
         uniteId, immeuble, studio,
         type: 'EDLS',
         nom: nomSortant,
-        email,
-        emailGarant: nettoyerEDL(sourceSortant.emailGarant),
+        email: adresse.valeur,
+        emailGarant: garant.valeur,
         statut: l.statut,
         versee,
-        sourceSortant: (versee && l.instantane) ? 'instantané' : 'mois',
-        adresseManquante: !adresseExploitableEDL(email),
+        sourceSortant: instantane ? 'instantané' : 'mois',
+        adresseCompletee: adresse.complete,
+        adresseManquante: !adresseExploitableEDL(adresse.valeur),
       });
+      if (adresse.complete) {
+        avertissements.push(
+          `${uniteId} : l'instantané ne portait pas d'adresse — celle du mois ` +
+          `a été reprise (${adresse.valeur}). À vérifier si le studio a changé ` +
+          `de locataire dans le mois.`);
+      }
     } else if (l.statut !== 'inoccupe') {
       avertissements.push(
         `${uniteId} : statut « ${l.statut} » mais aucun locataire sortant nommé.`);
