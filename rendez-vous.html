@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v1.5 — 20/09/2026
+<!-- rendez-vous.html — RDV EDL v1.7 — 20/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -231,9 +231,30 @@ async function appeler(corps){
       body: JSON.stringify(corps) });
     clearTimeout(echeance);
     var texte = await res.text();
-    if (!res.ok) throw new Error("le serveur a répondu " + res.status);
+    if (!res.ok) throw new Error("le serveur a répondu " + res.status +
+      (texte ? " — " + texte.slice(0, 120) : ""));
     try { return JSON.parse(texte); }
-    catch (e){ throw new Error("réponse illisible"); }
+    catch (e){
+      /* v1.6 — « réponse illisible » NE DISAIT PAS CE QUI AVAIT ETE RECU.
+         Make repond « Accepted », en texte brut, quand le scenario n'est pas
+         actif : la requete est mise en file d'attente et aucun module de
+         reponse n'est atteint. Le message laissait croire a un defaut de la
+         page, alors qu'il suffisait d'activer le scenario. */
+      var brut = String(texte || "").trim();
+      /* v1.7 — « Accepted » NE SIGNIFIE PAS SEULEMENT « SCENARIO ETEINT ».
+         Make repond aussi « Accepted » quand la branche s'arrete avant son
+         module de reponse — un filtre qui bloque suffit. Le 20/09, le
+         rendez-vous etait inscrit et la page annoncait un echec. Le message
+         ne doit donc accuser personne : il dit ce qui est sur, et invite a
+         verifier plutot qu'a refaire. */
+      if (/^accepted$/i.test(brut)) {
+        throw new Error("Make a accepté la demande sans répondre. " +
+          "L'opération a peut-être abouti : rechargez la page avant de " +
+          "recommencer");
+      }
+      throw new Error("réponse illisible" +
+        (brut ? " : « " + brut.slice(0, 120) + " »" : " (réponse vide)"));
+    }
   } catch (e){
     clearTimeout(echeance);
     throw new Error(e && e.name === "AbortError"
