@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v1.3 — 20/09/2026
+<!-- rendez-vous.html — RDV EDL v1.5 — 20/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -316,11 +316,39 @@ function afficher(){
     return '<div class="jour">' + enFrancais(j) + "</div>" +
       parJour[j].sort(function(a,b){ return a.heure < b.heure ? -1 : 1; })
         .map(function(c){
+          /* v1.5 — echapper() ne traite pas l'apostrophe, qui refermerait
+             l'attribut onclick. Les cles n'en contiennent pas aujourd'hui,
+             mais la page ne doit pas dependre de cela. */
           return '<button class="creneau" onclick="reserver(\'' +
-            echapper(c.cle) + '\')"><b>' + echapper(c.heure) + "</b><span>durée " +
+            echapper(c.cle).replace(/'/g, "&#39;") + '\')"><b>' + echapper(c.heure) + "</b><span>durée " +
             (c.duree >= 120 ? "2 h 30" : "1 h 30") + "</span></button>";
         }).join("");
   }).join("");
+}
+
+/* v1.4 — NE PLUS FAIRE RESSAISIR L'IDENTITE.
+
+   Apres une reservation, la page annoncait « c'est noté » et n'affichait
+   plus rien : il fallait se reidentifier pour constater que le rendez-vous
+   existait. Apres une annulation, meme chose en sens inverse — retaper nom
+   et adresse pour choisir une autre date.
+
+   Or la page connait deja le locataire : il vient d'etre reconnu. Elle
+   redemande donc les donnees a Make et se redessine, au lieu de tout
+   recommencer. */
+async function rafraichirEcran(message) {
+  try {
+    donnees = await appeler({ action: "creneaux", uniteId: contexte.uniteId,
+      type: contexte.type, nom: reconnu.nom, email: reconnu.email });
+  } catch (e) {
+    montrer("ko", "L'écran n'a pas pu être actualisé — " + echapper(e.message) +
+      ". Rechargez la page pour voir où vous en êtes.");
+    el("zone").innerHTML =
+      '<button class="clair" onclick="location.reload()">Recharger</button>';
+    return;
+  }
+  afficher();
+  if (message) montrer("ok", message);
 }
 
 /* --- reservation ------------------------------------------------------- */
@@ -355,45 +383,69 @@ async function reserver(cle){
                     : reconnu.correction === "nom" ? (l.nom || "") : "" });
   } catch (e){
     enCours = false;
+    afficher();
     montrer("ko", "L'enregistrement a échoué — " + echapper(e.message) +
       ". Votre rendez-vous n'est pas pris ; réessayez.");
-    afficher(); return;
+    return;
   }
-  enCours = false;
+  /* v1.5 — le verrou etait rendu AVANT le rafraichissement : pendant cette
+     seconde requete, un clic restait possible. On le rend a la toute fin. */
   if (rep && rep.ok){
-    montrer("ok", "C'est noté : <b>" + enFrancais(dateDeCle(cle)) + " à " +
-      c.heure + "</b>. Vous recevrez une confirmation par courriel.");
-    el("zone").innerHTML =
-      '<button class="clair" onclick="location.reload()">Revenir à mon rendez-vous</button>';
+    await rafraichirEcran("C'est noté : <b>" + enFrancais(dateDeCle(cle)) +
+      " à " + c.heure + "</b>. Vous recevrez une confirmation par courriel.");
   } else {
+    /* le creneau a ete pris entre l'affichage et le clic : on redessine la
+       liste sans lui, plutot que de laisser le locataire devant un bouton. */
+    await rafraichirEcran();
     montrer("ko", (rep && rep.message) ||
       "Ce créneau vient d'être réservé. Choisissez-en un autre.");
-    el("zone").innerHTML =
-      '<button class="clair" onclick="location.reload()">Revoir les créneaux</button>';
   }
+  enCours = false;
 }
 
 /* --- annulation -------------------------------------------------------- */
 async function annuler(){
+  /* v1.5 — L'ANNULATION N'AVAIT AUCUN VERROU.
+     Un double appui envoyait deux annulations : la premiere supprimait le
+     rendez-vous, la seconde ne trouvait plus rien et affichait « aucun
+     rendez-vous n'a été trouvé à annuler » — un message alarmant alors que
+     tout s'etait bien passe. Meme remede que pour la reservation, et le
+     bouton disparait pendant l'operation. */
+  if (enCours) return;
   if (!confirm("Annuler votre rendez-vous ?")) return;
+  enCours = true;
+  el("zone").innerHTML = "";
   montrer("", "Annulation…");
   try {
     var rep = await appeler({ action:"annuler", uniteId: contexte.uniteId,
       type: contexte.type, nom: reconnu.nom, email: reconnu.email });
   } catch (e){
+    /* v1.5 — l'ordre comptait : afficher() redessine ET reecrit le message.
+       Appele apres montrer(), il effacait l'echec et annoncait « votre
+       rendez-vous est fixé » — exactement le contraire de ce qui venait de
+       se passer. On redessine d'abord, on parle ensuite. */
+    enCours = false;
+    afficher();
     montrer("ko", "L'annulation a échoué — " + echapper(e.message) +
-      ". Votre rendez-vous est maintenu."); return;
+      ". Votre rendez-vous est maintenu.");
+    return;
   }
   /* v1.2 — le scenario rend « annule » vide quand il n'a rien trouve : sans
      ce controle, la page annoncait une annulation qui n'avait pas eu lieu. */
+  /* v1.5 — LE VERROU N'ETAIT RENDU SUR AUCUN CHEMIN DE REUSSITE.
+     Une annulation reussie laissait enCours a true : plus aucune reservation
+     n'etait ensuite possible, et le locataire cliquait dans le vide sans le
+     moindre message. Le verrou est rendu ici, quel que soit le resultat. */
+  enCours = false;
   if (rep && rep.ok && rep.annule){
-    montrer("ok", "Votre rendez-vous est annulé.");
-    el("zone").innerHTML =
-      '<button class="clair" onclick="location.reload()">Choisir une autre date</button>';
+    await rafraichirEcran("Votre rendez-vous est annulé. " +
+      "Choisissez une autre date ci-dessous.");
   } else if (rep && rep.ok){
+    afficher();
     montrer("ko", "Aucun rendez-vous n'a été trouvé à annuler. " +
       "Rechargez la page, ou prenez contact avec nous.");
   } else {
+    afficher();
     montrer("ko", (rep && rep.message) || "L'annulation n'a pas abouti.");
   }
 }
