@@ -1,4 +1,6 @@
-// graph-storage.js — RDV EDL v1.0 — 18/09/2026 — repris de Gestion Loyers v157, sans modification
+// graph-storage.js — RDV EDL v1.1 — 20/09/2026
+// Repris de Gestion Loyers v157, avec UNE correction : voir
+// lireFichierDansDossier, plus bas.
 // Gestion Loyers — stockage des données dans OneDrive
 // Un fichier PAR MOIS dans un sous-dossier dédié "GESTION-LOYERS/historique",
 // à l'intérieur du dossier PARTAGÉ "Immobilier 2025-2026" (le même que VéroS).
@@ -166,12 +168,39 @@ async function resoudreRefParChemin(cheminRelatif, creerSiAbsent) {
   return ref;
 }
 
-// lit le contenu d'un fichier désigné par son NOM, à l'intérieur d'un dossier déjà résolu par identifiant
+/* v1.1 — LA REDIRECTION DE « /content » PERDAIT L'AUTORISATION.
+
+   Graph ne renvoie pas le fichier lui-meme : il redirige vers une adresse de
+   telechargement sur my.microsoftpersonalcontent.com, qui porte deja son
+   propre jeton temporaire dans l'adresse. Le navigateur suit la redirection
+   EN REEMETTANT l'en-tete Authorization — et ce domaine le refuse. Resultat :
+   un 401 qui accuse a tort le jeton Graph, alors qu'il est parfaitement
+   valable. Observe le 20/09 sur le compte de Gerard.
+
+   Le remede documente : demander la FICHE du fichier, y lire
+   « @microsoft.graph.downloadUrl », et appeler cette adresse SANS aucun
+   en-tete. On ne le fait qu'en repli, pour ne pas payer deux requetes quand
+   la premiere suffit. */
 async function lireFichierDansDossier(refDossier, nomFichier) {
-  const url = refDossier.driveId
-    ? `/drives/${refDossier.driveId}/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:/content`
-    : `/me/drive/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:/content`;
-  return await appelGraph(url);
+  const base = refDossier.driveId
+    ? `/drives/${refDossier.driveId}/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:`
+    : `/me/drive/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:`;
+
+  const direct = await appelGraph(base + '/content');
+  if (direct && direct.ok) return direct;
+  if (!direct || direct.status !== 401) return direct;
+
+  // repli : la fiche, puis l'adresse de telechargement, sans en-tete
+  const fiche = await appelGraph(base);
+  if (!fiche || !fiche.ok) return direct;   // on rend la premiere erreur
+  let adresse;
+  try {
+    const item = await fiche.json();
+    adresse = item && item['@microsoft.graph.downloadUrl'];
+  } catch (e) { return direct; }
+  if (!adresse) return direct;
+
+  return await fetch(adresse);   // volontairement sans Authorization
 }
 
 // écrit (crée ou remplace) un fichier désigné par son NOM, à l'intérieur d'un dossier déjà résolu
