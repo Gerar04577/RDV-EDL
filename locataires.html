@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v1.1 — 18/09/2026 -->
+<!-- locataires.html — RDV EDL v1.2 — 20/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -58,7 +58,7 @@
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v1.1 — lecture seule de Gestion Loyers</div>
+  <div class="version">v1.2 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
@@ -87,6 +87,8 @@
 <div class="barre">
   <div class="compte" id="compte">—</div>
   <button class="bouton clair" style="flex:0 0 auto" onclick="recharger()">Recharger</button>
+  <button class="bouton clair" style="flex:0 0 auto" id="btnMaj"
+          onclick="mettreAJour()">Mettre à jour</button>
   <button class="bouton" id="btnEnvoyer" disabled onclick="envoyer()">Envoyer</button>
 </div>
 
@@ -215,6 +217,52 @@ function compter() {
     `${n} sélectionné(s) sur ${lignesEDL.length}` +
     (sansAdresse ? ` — <span class="rouge">${sansAdresse} sans adresse</span>` : '');
   document.getElementById('btnEnvoyer').disabled = n === 0;
+}
+
+/* v1.2 — REMPLIR « Locataires EDL » DANS MAKE.
+
+   Cette page calculait la liste et ne l'envoyait nulle part. Sans elle dans
+   Make, aucun locataire ne peut etre reconnu : rendez-vous.html refuse tout
+   le monde, faute d'avoir quelque chose a quoi comparer.
+
+   « Mettre a jour » envoie TOUTE la liste, y compris les lignes sans
+   adresse : elles servent a reconnaitre le locataire par son nom, et la
+   correction du courriel sera relevee a ce moment-la. C'est « Envoyer » qui
+   ne concerne que les lignes cochees — deux gestes distincts, deux
+   consequences distinctes. */
+async function mettreAJour() {
+  if (!lignesEDL.length) {
+    texte('etat', "Rien à mettre à jour : rechargez d'abord la liste.", 'encart alerte');
+    return;
+  }
+  if (!confirm(`Mettre à jour la liste des ${lignesEDL.length} locataires dans Make ?`)) return;
+
+  const btn = document.getElementById('btnMaj');
+  btn.disabled = true;
+  texte('etat', `Mise à jour de ${lignesEDL.length} lignes…`);
+
+  const minuterie = new AbortController();
+  const echeance = setTimeout(() => minuterie.abort(), 30000);
+  try {
+    const res = await fetch(WEBHOOK_MAKE, {
+      method: 'POST', signal: minuterie.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rafraichir', locataires: lignesEDL }),
+    });
+    clearTimeout(echeance);
+    const corps = await res.text();
+    if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
+    texte('etat', `Liste mise à jour dans Make : <b>${lignesEDL.length}</b> ligne(s). ` +
+      `Les locataires peuvent maintenant être reconnus.`, 'encart');
+  } catch (e) {
+    clearTimeout(echeance);
+    texte('etat',
+      `La mise à jour a échoué — ${echapper(
+        e && e.name === 'AbortError' ? 'pas de réponse après 30 secondes' : (e.message || e))}. ` +
+      `La liste dans Make est restée telle quelle.`, 'encart alerte');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function envoyer() {
