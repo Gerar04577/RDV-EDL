@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rendez-vous — état des lieux</title>
+<meta name="theme-color" content="#F0997B">
+<!-- rendez-vous.html — RDV EDL v1.3 — 20/09/2026
+
+     L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
+     elle s'ouvre par un lien de la forme :
+
+         rendez-vous.html#nimy-6-sortie
+         rendez-vous.html#nimy-6-entree
+
+     MAKE RENSEIGNE, CETTE PAGE DECIDE. Le scenario rend quatre choses sans
+     rien trancher : la ligne du locataire, son rendez-vous eventuel, le
+     rendez-vous de l'AUTRE type pour le meme studio, et les creneaux libres.
+     Les quatre regles s'appliquent ici :
+
+       1. reconnaissance du locataire, en quatre cas
+       2. un seul rendez-vous par etat des lieux
+       3. l'entrant ne voit rien tant que le sortant n'a pas reserve
+       4. six jours entre la sortie et l'entree d'un meme studio -->
+<style>
+  :root { --corail:#F0997B; --fonce:#4A1B0C; --fond:#FAF6F4; --bord:#E3D9D4;
+          --vert:#1D9E75; --rouge:#C0392B; --gris:#7A7A7A; }
+  * { box-sizing:border-box; -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         background:var(--fond); color:#2B2B2B; padding:0 0 30px; }
+  header { background:var(--corail); color:var(--fonce); padding:22px 16px 18px; }
+  header h1 { margin:0; font-size:20px; }
+  header .sous { font-size:13.5px; opacity:.85; margin-top:3px; }
+  main { padding:16px 14px; max-width:560px; margin:0 auto; }
+  .encart { background:#fff; border:1px solid var(--bord); border-radius:10px;
+            padding:14px; margin:12px 0; font-size:14.5px; line-height:1.6; }
+  .encart.ok { border-color:var(--vert); background:#EEF9F5; }
+  .encart.ko { border-color:var(--rouge); background:#FDF3F2; color:var(--rouge); }
+  .encart.attente { border-color:var(--corail); background:#FDF4F0; }
+  label { display:block; font-size:13px; font-weight:600; color:var(--fonce);
+          margin:12px 0 4px; }
+  input[type=text], input[type=email] { width:100%; padding:13px;
+          border:1px solid var(--bord); border-radius:9px; font-size:16px; }
+  button { width:100%; padding:15px; margin:12px 0 0; border:0; border-radius:10px;
+           background:var(--fonce); color:#fff; font-size:16px; font-weight:600;
+           cursor:pointer; }
+  button.clair { background:#fff; color:var(--fonce); border:1.5px solid var(--fonce); }
+  button.danger { background:#fff; color:var(--rouge); border:1.5px solid var(--rouge); }
+  button:disabled { background:var(--gris); cursor:not-allowed; }
+  .creneau { display:block; width:100%; text-align:left; background:#fff;
+             border:1px solid var(--bord); border-radius:10px; padding:14px;
+             margin:8px 0; font-size:15.5px; cursor:pointer; color:#2B2B2B;
+             font-weight:400; }
+  .creneau:hover { border-color:var(--fonce); }
+  .creneau b { display:block; font-size:16px; color:var(--fonce); }
+  .creneau span { font-size:13px; color:var(--gris); }
+  .jour { font-size:13px; font-weight:700; color:var(--fonce); text-transform:uppercase;
+          margin:18px 0 2px; }
+  .cache { display:none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="titre">Rendez-vous</h1>
+  <div class="sous" id="sousTitre">état des lieux</div>
+</header>
+
+<main>
+  <div id="etat" class="encart">Chargement…</div>
+
+  <div id="identification" class="cache">
+    <div class="encart">
+      Pour accéder à votre rendez-vous, indiquez votre nom et l'adresse
+      électronique que vous nous avez communiquée.
+    </div>
+    <label for="nom">Nom</label>
+    <input type="text" id="nom" autocomplete="off" placeholder="Votre nom">
+    <label for="email">Adresse électronique</label>
+    <input type="email" id="email" autocomplete="off" placeholder="vous@exemple.be">
+    <button onclick="identifier()">Continuer</button>
+  </div>
+
+  <div id="zone"></div>
+</main>
+
+<script>
+var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
+var JOURS_ECART = 6;   // entre la sortie et l'entrée d'un même studio
+
+var contexte = null;   // { uniteId, type, libelle }
+var donnees = null;    // la réponse de Make
+var reconnu = null;    // { nom, email, correction }
+
+function el(id){ return document.getElementById(id); }
+function montrer(classe, texte){
+  var n = el("etat"); n.className = "encart " + classe; n.innerHTML = texte;
+}
+function echapper(s){
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]; });
+}
+
+/* --- comparaison souple ------------------------------------------------
+   Les noms saisis par vos locataires ne ressembleront pas exactement a ce
+   que porte Gestion Loyers. Le fichier de septembre contient cinq couples
+   — « Bérangère VERBRUGGEN & Lenny PATERNOSTRE » — et quatre noms saisis a
+   l'envers — « HIFOUF Hayat ». Une comparaison stricte echouerait sur neuf
+   locataires sur quarante-huit. */
+function normaliser(s){
+  return String(s == null ? "" : s)
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")   // accents
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")         // invisibles
+    .toLowerCase().replace(/[^a-z0-9@. ]+/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+function memeEmail(a, b){
+  return !!normaliser(a) && normaliser(a) === normaliser(b);
+}
+/* Il suffit qu'un mot significatif du nom saisi figure dans le nom
+   enregistre, ou l'inverse. « Hifouf » retrouve « HIFOUF Hayat », et
+   « Paternostre » retrouve le couple. */
+function memeNom(saisi, enregistre){
+  var a = normaliser(saisi), b = normaliser(enregistre);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  var mots = a.split(" ").filter(function(m){ return m.length >= 3; });
+  return mots.some(function(m){ return b.indexOf(m) !== -1; })
+      || b.split(" ").filter(function(m){ return m.length >= 3; })
+          .some(function(m){ return a.indexOf(m) !== -1; });
+}
+
+/* --- dates ------------------------------------------------------------- */
+function aujourdhui(){
+  var d = new Date();
+  return d.getFullYear() + "-" +
+    ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0"+d.getDate()).slice(-2);
+}
+function dateDeCle(cle){ return String(cle || "").slice(0, 10); }
+function ecartJours(a, b){
+  return Math.round((new Date(b+"T12:00:00") - new Date(a+"T12:00:00")) / 86400000);
+}
+function enFrancais(iso){
+  var d = new Date(iso + "T12:00:00");
+  var j = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"][d.getDay()];
+  var m = ["janvier","février","mars","avril","mai","juin","juillet","août",
+           "septembre","octobre","novembre","décembre"][d.getMonth()];
+  return j + " " + d.getDate() + " " + m;
+}
+
+/* --- le lien ----------------------------------------------------------- */
+function lireLien(){
+  var h = decodeURIComponent(String(location.hash || "").replace(/^#/, "")).trim();
+  var m = h.match(/^(.+)-(sortie|entree)$/);
+  if (!m) return null;
+  return { uniteId: m[1],
+           type: m[2] === "sortie" ? "EDLS" : "EDLE",
+           libelle: m[2] === "sortie" ? "de sortie" : "d'entrée" };
+}
+
+/* --- les regles, appliquees a la liste des creneaux ---------------------
+   Rend { liste, message } : le message explique pourquoi la liste est vide,
+   plutot que de laisser le locataire devant un ecran muet. */
+function creneauxOuverts(d, ctx){
+  /* v1.1 — UN CRENEAU EST PRIS PARCE QU'UN RENDEZ-VOUS PORTE SA CLE.
+     Le scenario ne tient plus de champ « etat » : il renvoie tous les
+     creneaux du type demande, et la liste des cles deja reservees. La
+     soustraction se fait ici. Un etat a maintenir dans deux magasins finit
+     toujours par diverger ; une cle presente ou absente, jamais. */
+  /* v1.3 — LA LIGNE FANTOME DE L'AGREGATEUR.
+     Quand une recherche ne trouve rien, json:AggregateToJSON ne rend pas un
+     tableau vide mais UNE entree aux champs nuls :
+         "creneaux":[{"cle":null,"date":null,"duree":null,"heure":null}]
+     Verifie le 20/09 sur le compte : type EDLE, aucun creneau ouvert.
+     Le garde-fou n'existait que sur « pris ». Sans lui sur « creneaux », la
+     page aurait propose un creneau vide, et le clic aurait envoye une cle
+     nulle. On ecarte donc les entrees sans cle DES DEUX COTES. */
+  var pris = {};
+  ((d && d.pris) || []).forEach(function(p){ if (p && p.cle) pris[p.cle] = true; });
+
+  var tous = ((d && d.creneaux) || [])
+    .filter(function(c){ return c && c.cle && c.date && c.heure; })
+    .filter(function(c){ return !pris[c.cle]; });
+  var aVenir = tous.filter(function(c){ return dateDeCle(c.cle) >= aujourdhui(); });
+  if (!aVenir.length){
+    return { liste: [], message: tous.length
+      ? "Toutes les dates proposées sont passées. Prenez contact avec nous."
+      : "Aucun créneau n'est ouvert pour le moment. Vous recevrez un message dès qu'il y en aura." };
+  }
+
+  var cleAutre = d.rdvAutre && d.rdvAutre.creneau;
+  var dateAutre = (cleAutre && String(cleAutre).length >= 10)
+                  ? dateDeCle(cleAutre) : "";
+
+  if (ctx.type === "EDLE"){
+    /* L'entrant attend le sortant : sans etat des lieux de sortie fixe, on
+       ne peut pas savoir a partir de quand le logement sera disponible. */
+    if (!dateAutre){
+      return { liste: [], message:
+        "L'état des lieux de sortie du locataire précédent n'est pas encore " +
+        "fixé. Nous vous préviendrons dès que vous pourrez choisir votre " +
+        "rendez-vous." };
+    }
+    var ok = aVenir.filter(function(c){
+      return ecartJours(dateAutre, dateDeCle(c.cle)) >= JOURS_ECART; });
+    return { liste: ok, message: ok.length ? "" :
+      "Aucune date ne convient encore : un délai de " + JOURS_ECART +
+      " jours est nécessaire après le départ du locataire précédent, prévu le " +
+      enFrancais(dateAutre) + ". Prenez contact avec nous." };
+  }
+
+  /* Le sortant : si une entree est deja fixee, il doit partir assez tot. */
+  if (dateAutre){
+    var ok2 = aVenir.filter(function(c){
+      return ecartJours(dateDeCle(c.cle), dateAutre) >= JOURS_ECART; });
+    return { liste: ok2, message: ok2.length ? "" :
+      "Aucune date ne convient : l'entrée du locataire suivant est fixée au " +
+      enFrancais(dateAutre) + ", et un délai de " + JOURS_ECART +
+      " jours est nécessaire. Prenez contact avec nous." };
+  }
+  return { liste: aVenir, message: "" };
+}
+
+/* --- appels a Make ----------------------------------------------------- */
+async function appeler(corps){
+  var minuterie = new AbortController();
+  var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
+  try {
+    var res = await fetch(WEBHOOK, { method:"POST", signal: minuterie.signal,
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(corps) });
+    clearTimeout(echeance);
+    var texte = await res.text();
+    if (!res.ok) throw new Error("le serveur a répondu " + res.status);
+    try { return JSON.parse(texte); }
+    catch (e){ throw new Error("réponse illisible"); }
+  } catch (e){
+    clearTimeout(echeance);
+    throw new Error(e && e.name === "AbortError"
+      ? "pas de réponse après 30 secondes" : (e.message || e));
+  }
+}
+
+/* --- identification ---------------------------------------------------- */
+async function identifier(){
+  var nom = el("nom").value.trim(), email = el("email").value.trim();
+  if (!nom || !email){
+    montrer("ko", "Indiquez votre nom et votre adresse électronique."); return;
+  }
+  montrer("", "Vérification…");
+  try {
+    donnees = await appeler({ action:"creneaux", uniteId: contexte.uniteId,
+                              type: contexte.type, nom: nom, email: email });
+  } catch (e){
+    montrer("ko", "La vérification a échoué — " + echapper(e.message) +
+      ". Réessayez dans un instant."); return;
+  }
+
+  var l = donnees.locataire || {};
+  var nomOk = memeNom(nom, l.nom), emailOk = memeEmail(email, l.email)
+           || memeEmail(email, l.emailGarant);
+
+  if (!nomOk && !emailOk){
+    montrer("ko", "Ces informations ne correspondent pas à ce logement. " +
+      "Vérifiez l'orthographe, ou prenez contact avec nous.");
+    return;
+  }
+
+  /* Un seul des deux concorde : on accepte, on retient ce que le locataire
+     vient de saisir, et on note la correction a reporter. */
+  reconnu = {
+    nom: nomOk ? (l.nom || nom) : nom,
+    email: emailOk ? (l.email || email) : email,
+    correction: (nomOk && emailOk) ? null : (nomOk ? "email" : "nom")
+  };
+  el("identification").className = "cache";
+  afficher();
+}
+
+/* --- affichage --------------------------------------------------------- */
+function afficher(){
+  var l = donnees.locataire || {};
+  var studio = l.studio || contexte.uniteId;
+  el("sousTitre").textContent = "état des lieux " + contexte.libelle +
+    " — " + studio;
+
+  /* meme prudence ici : rdvExistant et rdvAutre portent une chaine vide
+     quand rien n'a ete trouve, jamais null — mais une valeur inattendue ne
+     doit pas faire passer la page en mode « rendez-vous pris ». */
+  var deja = donnees.rdvExistant && donnees.rdvExistant.creneau
+             && String(donnees.rdvExistant.creneau).length >= 10
+             ? donnees.rdvExistant.creneau : "";
+  if (deja){
+    var d = dateDeCle(deja), h = String(deja).slice(11, 16).replace("h", ":");
+    montrer("ok", "Votre rendez-vous est fixé au <b>" + enFrancais(d) +
+      " à " + h + "</b>.");
+    el("zone").innerHTML =
+      '<button class="danger" onclick="annuler()">Annuler ce rendez-vous</button>' +
+      '<div class="encart">Après annulation, vous pourrez choisir une autre date.</div>';
+    return;
+  }
+
+  var r = creneauxOuverts(donnees, contexte);
+  if (!r.liste.length){
+    montrer("attente", r.message); el("zone").innerHTML = ""; return;
+  }
+
+  montrer("", "Choisissez la date et l'heure qui vous conviennent. " +
+    "Les créneaux se réservent au fur et à mesure.");
+
+  var parJour = {};
+  r.liste.forEach(function(c){
+    (parJour[dateDeCle(c.cle)] = parJour[dateDeCle(c.cle)] || []).push(c); });
+
+  el("zone").innerHTML = Object.keys(parJour).sort().map(function(j){
+    return '<div class="jour">' + enFrancais(j) + "</div>" +
+      parJour[j].sort(function(a,b){ return a.heure < b.heure ? -1 : 1; })
+        .map(function(c){
+          return '<button class="creneau" onclick="reserver(\'' +
+            echapper(c.cle) + '\')"><b>' + echapper(c.heure) + "</b><span>durée " +
+            (c.duree >= 120 ? "2 h 30" : "1 h 30") + "</span></button>";
+        }).join("");
+  }).join("");
+}
+
+/* --- reservation ------------------------------------------------------- */
+var enCours = false;   // v1.2 — voir ci-dessous
+
+async function reserver(cle){
+  /* v1.2 — UN DOUBLE CLIC PARTAIT DEUX FOIS.
+     Sur un telephone, un appui un peu long declenche volontiers deux
+     evenements. La premiere requete prenait le creneau, la seconde se
+     heurtait a la cle deja prise — et le locataire lisait « ce creneau
+     vient d'etre reserve » alors que c'etait lui qui venait de le prendre. */
+  if (enCours) return;
+  var c = (donnees.creneaux || []).filter(function(x){ return x.cle === cle; })[0];
+  if (!c) return;
+  if (!confirm("Confirmer le rendez-vous du " + enFrancais(dateDeCle(cle)) +
+      " à " + c.heure + " ?")) return;
+
+  enCours = true;
+  el("zone").innerHTML = "";
+  montrer("", "Enregistrement…");
+  var l = donnees.locataire || {};
+  try {
+    /* v1.2 — la correction relevee a l'identification (nom ou courriel qui
+       ne concordait pas) etait calculee puis oubliee. Elle part desormais
+       avec la reservation ; le scenario l'inscrira dans Corrections EDL. */
+    var rep = await appeler({ action:"reserver", cle: cle, date: c.date,
+      heure: c.heure, duree: c.duree, type: contexte.type,
+      uniteId: contexte.uniteId, immeuble: l.immeuble || "",
+      studio: l.studio || "", nom: reconnu.nom, email: reconnu.email,
+      correction: reconnu.correction || "",
+      ancienneValeur: reconnu.correction === "email" ? (l.email || "")
+                    : reconnu.correction === "nom" ? (l.nom || "") : "" });
+  } catch (e){
+    enCours = false;
+    montrer("ko", "L'enregistrement a échoué — " + echapper(e.message) +
+      ". Votre rendez-vous n'est pas pris ; réessayez.");
+    afficher(); return;
+  }
+  enCours = false;
+  if (rep && rep.ok){
+    montrer("ok", "C'est noté : <b>" + enFrancais(dateDeCle(cle)) + " à " +
+      c.heure + "</b>. Vous recevrez une confirmation par courriel.");
+    el("zone").innerHTML =
+      '<button class="clair" onclick="location.reload()">Revenir à mon rendez-vous</button>';
+  } else {
+    montrer("ko", (rep && rep.message) ||
+      "Ce créneau vient d'être réservé. Choisissez-en un autre.");
+    el("zone").innerHTML =
+      '<button class="clair" onclick="location.reload()">Revoir les créneaux</button>';
+  }
+}
+
+/* --- annulation -------------------------------------------------------- */
+async function annuler(){
+  if (!confirm("Annuler votre rendez-vous ?")) return;
+  montrer("", "Annulation…");
+  try {
+    var rep = await appeler({ action:"annuler", uniteId: contexte.uniteId,
+      type: contexte.type, nom: reconnu.nom, email: reconnu.email });
+  } catch (e){
+    montrer("ko", "L'annulation a échoué — " + echapper(e.message) +
+      ". Votre rendez-vous est maintenu."); return;
+  }
+  /* v1.2 — le scenario rend « annule » vide quand il n'a rien trouve : sans
+     ce controle, la page annoncait une annulation qui n'avait pas eu lieu. */
+  if (rep && rep.ok && rep.annule){
+    montrer("ok", "Votre rendez-vous est annulé.");
+    el("zone").innerHTML =
+      '<button class="clair" onclick="location.reload()">Choisir une autre date</button>';
+  } else if (rep && rep.ok){
+    montrer("ko", "Aucun rendez-vous n'a été trouvé à annuler. " +
+      "Rechargez la page, ou prenez contact avec nous.");
+  } else {
+    montrer("ko", (rep && rep.message) || "L'annulation n'a pas abouti.");
+  }
+}
+
+/* --- ouverture --------------------------------------------------------- */
+(function(){
+  contexte = lireLien();
+  if (!contexte){
+    montrer("ko", "Ce lien est incomplet. Utilisez celui du courriel " +
+      "que nous vous avons adressé.");
+    return;
+  }
+  el("titre").textContent = "État des lieux " + contexte.libelle;
+  el("sousTitre").textContent = contexte.uniteId;
+  montrer("", "Indiquez votre nom et votre adresse électronique pour continuer.");
+  el("identification").className = "";
+})();
+</script>
+</body>
+</html>
