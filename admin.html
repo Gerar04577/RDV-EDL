@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v2.6 — 19/09/2026
+<!-- admin.html — RDV EDL v3.0 — 20/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -77,7 +77,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v2.6 — journées mixtes</div>
+  <div class="version">v3.0 — journées mixtes, sans écrasement</div>
 </header>
 
 <main>
@@ -175,7 +175,7 @@
 
 <div class="barre">
   <div class="compte" id="compte">—</div>
-  <button class="bouton clair" style="flex:0 0 auto" onclick="recalculer()">Recalculer</button>
+  <button class="bouton clair" style="flex:0 0 auto" onclick="existants = null; recalculer()">Recalculer</button>
   <button class="bouton" id="envoyer" onclick="envoyer()">Envoyer</button>
 </div>
 
@@ -188,6 +188,34 @@ var DEBUT_JOURNEE = 9 * 60;   // 09:00
 var DERNIER_DEPART = 18 * 60; // on n'entame plus rien apres 18:00
 
 var calendrier = null;
+var existants = null;   // ce que Make contient deja, ou null si inconnu
+
+/* v3.0 — NE PLUS AJOUTER PAR-DESSUS CE QUI EXISTE.
+
+   Rouvrir une plage ajoutait des creneaux sans regarder ceux qui s'y
+   trouvaient deja. Le 7 octobre s'est ainsi retrouve avec cinq sorties ET
+   quatre entrees : neuf rendez-vous, impossible a tenir dans une journee.
+
+   L'ecran lit donc d'abord ce que Make contient, et ne pose que ce qui tient
+   entre les creneaux existants. Si cette lecture echoue, il refuse d'ouvrir
+   plutot que de travailler a l'aveugle. */
+function minutes(h){ return Number(h.slice(0,2)) * 60 + Number(h.slice(3,5)); }
+
+/* Le type est inscrit a la fin de la cle : « 2026-10-01_09h00_EDLS ». */
+function typeDeCle(cle){ return String(cle).slice(-4); }
+function dateDeCle(cle){ return String(cle).slice(0,10); }
+
+/* Les intervalles deja occupes une journee donnee, route comprise. */
+function occupation(iso){
+  return (existants || [])
+    .filter(function(c){ return dateDeCle(c.cle) === iso; })
+    .map(function(c){
+      var d = Number(c.duree) || (typeDeCle(c.cle) === "EDLS" ? 90 : 150);
+      var t = minutes(c.heure);
+      return { debut: t, fin: t + d + ROUTE, type: typeDeCle(c.cle) };
+    })
+    .sort(function(a,b){ return a.debut - b.debut; });
+}
 
 function el(id){ return document.getElementById(id); }
 function hhmm(m){ var h=Math.floor(m/60), r=m%60;
@@ -217,24 +245,46 @@ function reglesDuJour(iso, b){
 function composerJournee(iso, b){
   var r = reglesDuJour(iso, b);
   var creneaux = [], t = DEBUT_JOURNEE;
+  var pris = occupation(iso);
+  var dejaS = pris.filter(function(x){ return x.type === "EDLS"; }).length;
+  var dejaE = pris.filter(function(x){ return x.type === "EDLE"; }).length;
+
+  /* Avance t jusqu'a la premiere position libre pour une duree donnee. */
+  function placer(duree){
+    var bouge = true;
+    while (bouge){
+      bouge = false;
+      for (var i = 0; i < pris.length; i++){
+        if (t < pris[i].fin && t + duree + ROUTE > pris[i].debut){
+          t = pris[i].fin; bouge = true; break;
+        }
+      }
+    }
+    return t;
+  }
 
   function poser(type, plafond){
     var n = 0;
-    while (n < plafond && t <= DERNIER_DEPART){
+    while (n < plafond && placer(DUREE[type]) <= DERNIER_DEPART){
       creneaux.push({
         cle: iso + "_" + hhmm(t).replace(":","h") + "_" + type,
         date: iso, heure: hhmm(t), type: type,
         duree: DUREE[type], etat: "libre"
       });
+      pris.push({ debut: t, fin: t + DUREE[type] + ROUTE, type: type });
+      pris.sort(function(a,b){ return a.debut - b.debut; });
       t += DUREE[type] + ROUTE;
       n++;
     }
     return n;
   }
 
-  var nS = poser("EDLS", r.edls);
-  var nE = poser("EDLE", r.edle);
-  return { date: iso, creneaux: creneaux, edls: nS, edle: nE };
+  /* Les plafonds comptent les creneaux DEJA poses : une journee au complet
+     ne recoit plus rien. */
+  var nS = poser("EDLS", Math.max(0, r.edls - dejaS));
+  var nE = poser("EDLE", Math.max(0, r.edle - dejaE));
+  return { date: iso, creneaux: creneaux, edls: nS, edle: nE,
+           existantsS: dejaS, existantsE: dejaE };
 }
 
 function composerCalendrier(b){
@@ -308,7 +358,10 @@ function verifierBornes(b){
   return null;
 }
 
-function recalculer(){
+async function recalculer(){
+  if (existants === null){
+    if (!(await lireExistants())) return;
+  }
   var b = bornes();
   var souci = verifierBornes(b);
   if (souci){
@@ -361,7 +414,10 @@ function recalculer(){
     "<th>Contenu</th><th>Heures</th></tr>" + lignes + "</table></div>";
 
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
-  el("compte").textContent = total + " créneaux sur " + n + " journées";
+  var dejaLa = calendrier.jours.reduce(function(s,j){
+    return s + (j.existantsS || 0) + (j.existantsE || 0); }, 0);
+  el("compte").textContent = total + " à ajouter" +
+    (dejaLa ? " · " + dejaLa + " déjà en place" : "") + " sur " + n + " journées";
 }
 
 /* Envoi journee par journee : une panne au milieu reste visible et
@@ -373,6 +429,11 @@ async function envoyer(){
   }
   if (calendrier.tronque){
     montrer("ko", "Plage trop longue : corrigez le dernier jour avant d'envoyer.");
+    return;
+  }
+  if (existants === null){
+    montrer("ko", "Les créneaux déjà ouverts n'ont pas pu être lus : " +
+      "l'envoi est refusé. Appuyez sur Recalculer.");
     return;
   }
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
@@ -427,6 +488,8 @@ async function envoyer(){
 
   champs.forEach(function(id){ el(id).disabled = false; });
   el("envoyer").disabled = false;
+  /* ce qui vient d'etre envoye fait desormais partie de l'existant */
+  existants = null;
   if (!echecs.length){
     montrer("ok", "Terminé : <b>" + envoyes + "</b> créneaux envoyés sur " +
       journees.length + " journées. Les créneaux déjà présents ont été ignorés.");
@@ -434,6 +497,38 @@ async function envoyer(){
     montrer("ko", envoyes + " créneaux envoyés, mais " + echecs.length +
       " journée(s) en échec : " + echecs.join(", ") +
       ". Relancez l'envoi : les journées déjà passées ne seront pas dupliquées.");
+  }
+}
+
+/* v3.0 — LA LECTURE DE L'EXISTANT CONDITIONNE TOUT.
+   Si elle echoue, on n'ouvre pas : travailler a l'aveugle reviendrait a
+   empiler des creneaux sur des journees deja pleines. */
+async function lireExistants(){
+  montrer("", "Lecture des créneaux déjà ouverts…");
+  var minuterie = new AbortController();
+  var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
+  try {
+    var res = await fetch(WEBHOOK, { method:"POST", signal: minuterie.signal,
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ action: "tousCreneaux" }) });
+    clearTimeout(echeance);
+    var texte = await res.text();
+    if (!res.ok) throw new Error("Make a répondu " + res.status);
+    var rep = JSON.parse(texte);
+    existants = (rep.creneaux || []).filter(function(c){
+      return c && c.cle && c.heure; });
+    return true;
+  } catch (e){
+    clearTimeout(echeance);
+    existants = null;
+    montrer("ko", "Impossible de lire les créneaux déjà ouverts — " +
+      (e && e.name === "AbortError" ? "pas de réponse après 30 secondes"
+                                    : (e.message || e)) +
+      ". Sans cette lecture, ouvrir risquerait de surcharger des journées " +
+      "déjà remplies. Réessayez avec le bouton Recalculer.");
+    el("calendrier").innerHTML = ""; el("compte").textContent = "—";
+    calendrier = null;
+    return false;
   }
 }
 
