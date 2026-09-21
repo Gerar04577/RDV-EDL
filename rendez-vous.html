@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v1.9 — 20/09/2026
+<!-- rendez-vous.html — RDV EDL v2.1 — 21/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -84,6 +84,7 @@
   <div id="zone"></div>
 </main>
 
+<script src="signature-edl.js?v=1.0"></script>
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
 var JOURS_ECART = 6;   // entre la sortie et l'entrée d'un même studio
@@ -388,6 +389,19 @@ function dateEnLettres(iso){
   return j + " " + (n === 1 ? "1er" : n) + " " + m + " " + d.getFullYear();
 }
 
+/* v2.1 — UN FICHIER DE SIGNATURE ABSENT NE DOIT RIEN BLOQUER.
+   Si signature-edl.js manque — oubli au chargement, fichier resté en cache
+   — signatureEDL n'existe pas, la composition du courriel plante, et la
+   reservation n'etait jamais envoyee. Un fichier qui ne sert qu'a signer
+   bloquait la fonction principale. On signe alors par defaut, et le
+   rendez-vous part. */
+function signer(uniteId){
+  try {
+    if (typeof signatureEDL === "function") return signatureEDL(uniteId);
+  } catch (e) { /* on retombe sur la signature par defaut */ }
+  return "Jean-Marc Gérard";
+}
+
 function composerConfirmation(c, studio){
   var nature = contexte.type === "EDLS" ? "de sortie" : "d'entrée";
   /* v1.9 — l'adresse de la page, SANS ses parametres.
@@ -405,8 +419,14 @@ function composerConfirmation(c, studio){
       " à " + c.heure + ".\n\n" +
       "Pour modifier ou annuler ce rendez-vous, utilisez le lien suivant :\n\n" +
       lien + "\n\n" +
+      /* v2.0 — l'avertissement demande par Gerard : un locataire qui annule
+         doit savoir qu'il risque de ne plus trouver de place s'il tarde. */
+      "Nous attirons votre attention sur le fait que les créneaux se " +
+      "réservent habituellement très vite. En cas d'annulation, nous vous " +
+      "invitons à choisir sans tarder une nouvelle date.\n\n" +
       "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
-      "distinguées."
+      "distinguées.\n\n" +
+      signer(contexte.uniteId)
   };
 }
 

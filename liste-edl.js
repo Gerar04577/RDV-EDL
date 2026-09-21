@@ -1,4 +1,7 @@
-// liste-edl.js — RDV EDL v1.2 — 20/09/2026
+// liste-edl.js — RDV EDL v1.4 — 21/09/2026
+// v1.4 : aucun changement de code. L'en-tete portait encore « v1.2 » alors
+// que le fichier contenait deja les corrections de la v1.3 : deux contenus
+// differents partageaient un numero. On passe a un numero jamais employe.
 //
 // Construit la liste des personnes à inviter pour un état des lieux, en
 // croisant deux fichiers OneDrive de Gestion Loyers, SANS RIEN Y ÉCRIRE :

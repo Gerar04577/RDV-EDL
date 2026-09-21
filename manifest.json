@@ -1,4 +1,5 @@
 {
+  "version_rdv_edl": "v1.2 — 21/09/2026 — champ ignoré par les navigateurs, sert au suivi des versions",
   "name": "RDV EDL",
   "short_name": "RDV EDL",
   "description": "Prise de rendez-vous des états des lieux d'entrée et de sortie",
@@ -8,7 +9,15 @@
   "background_color": "#FAF6F4",
   "theme_color": "#F0997B",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

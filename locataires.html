@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v1.2 — 20/09/2026 -->
+<!-- locataires.html — RDV EDL v1.6 — 21/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -58,7 +58,7 @@
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v1.2 — lecture seule de Gestion Loyers</div>
+  <div class="version">v1.6 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
@@ -94,7 +94,8 @@
 
 <script src="graph-auth.js?v=1.1"></script>
 <script src="graph-storage.js?v=1.1"></script>
-<script src="liste-edl.js?v=1.3"></script>
+<script src="liste-edl.js?v=1.4"></script>
+<script src="signature-edl.js?v=1.0"></script>
 <script>
 /* locataires.html — RDV EDL v1.0 — 18/09/2026
    Écran de consultation et de sélection. AUCUN ENVOI AUTOMATIQUE : la liste
@@ -191,7 +192,8 @@ function dessiner() {
               <span class="etiq ${l.type.toLowerCase()}">${l.type}</span>
               <span class="nom">${echapper(l.nom)}</span>
             </div>
-            <div class="meta">${echapper(l.studio)}</div>
+            <div class="meta">${echapper(l.studio)}${
+              dejaInvites[cleInvitation(l)] ? ' · <b>invité à ' + dejaInvites[cleInvitation(l)] + '</b>' : ''}</div>
             <div class="${l.adresseManquante ? 'rouge' : 'meta'}">
               ${l.adresseManquante ? 'aucune adresse exploitable — à corriger dans Gestion Loyers'
                                    : echapper(l.email)}
@@ -265,10 +267,72 @@ async function mettreAJour() {
   }
 }
 
+/* v1.3 — L'INVITATION EST COMPOSEE ICI, PAS DANS MAKE.
+   Make l'ecrivait d'un seul texte, identique pour tous : il ne pouvait pas
+   savoir quel immeuble appelle quelle signature. La page compose donc
+   chaque courriel en entier, signature comprise, et Make se contente de
+   l'expedier — le schema du courriel de confirmation, deja eprouve. */
+/* v1.4 — UN FICHIER DE SIGNATURE ABSENT NE DOIT RIEN BLOQUER.
+   Si signature-edl.js manque — oubli au chargement, fichier resté en cache
+   — signatureEDL n'existe pas, la composition du courriel plante, et les
+   invitations n'etaient jamais envoyees. Un fichier qui ne sert qu'a signer
+   bloquait la fonction principale. On signe alors par defaut, et le
+   rendez-vous part. */
+function signer(uniteId){
+  try {
+    if (typeof signatureEDL === "function") return signatureEDL(uniteId);
+  } catch (e) { /* on retombe sur la signature par defaut */ }
+  return "Jean-Marc Gérard";
+}
+
+function composerInvitation(l) {
+  var nature = l.type === 'EDLS' ? 'de sortie' : "d'entrée";
+  /* v1.5 — un studio vide donnait « État des lieux — » et « votre logement
+     doit être fixé ». Le studio vient de la designation dans Gestion
+     Loyers et manque rarement ; on se rabat sur l'immeuble, puis sur
+     l'identifiant, plutot que d'envoyer une phrase boiteuse. */
+  var logement = String(l.studio || l.immeuble || l.uniteId || '').trim() || 'votre logement';
+  var base = location.origin + location.pathname.replace(/[^/]*$/, '');
+  var lien = base + 'rendez-vous.html#' + l.uniteId + '-' +
+             (l.type === 'EDLS' ? 'sortie' : 'entree');
+  return {
+    objet: 'État des lieux — ' + logement,
+    corps: 'Madame, Monsieur,\n\n' +
+      "L'état des lieux " + nature + ' de votre logement ' + logement +
+      ' doit être fixé.\n\n' +
+      "Vous pouvez choisir vous-même la date et l'heure qui vous conviennent " +
+      'en suivant ce lien :\n\n' + lien + '\n\n' +
+      'Les créneaux se réservent au fur et à mesure : nous vous invitons à ' +
+      'faire votre choix sans tarder.\n\n' +
+      "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
+      'distinguées.\n\n' + signer(l.uniteId)
+  };
+}
+
+/* v1.5 — NE PAS INVITER DEUX FOIS SANS LE SAVOIR.
+   Apres un envoi, les lignes restaient cochees et un second clic, avec la
+   meme confirmation anodine, renvoyait tout : le locataire recevait deux
+   courriels identiques. La page retient desormais ce qu'elle a envoye
+   pendant la seance, decoche ces lignes, les marque, et demande une
+   confirmation explicite avant tout renvoi.
+   Limite assumee : cette memoire ne survit ni au rechargement ni a un autre
+   appareil. Une relance volontaire, un autre jour, reste donc possible. */
+var dejaInvites = {};
+function cleInvitation(l) { return l.uniteId + '_' + l.type + '_' + (l.email || '').toLowerCase(); }
+
 async function envoyer() {
   const choisis = selection();
   if (!choisis.length) return;
-  if (!confirm(`Envoyer ${choisis.length} invitation(s) ?`)) return;
+  const renvois = choisis.filter(x => dejaInvites[cleInvitation(x)]);
+  if (renvois.length) {
+    /* v1.6 — « 1 de ces locataires ont » : l'accord suit le nombre. */
+    const question = renvois.length === 1
+      ? `Ce locataire a déjà reçu son invitation pendant cette séance. ` +
+        `L'inviter une seconde fois ?`
+      : `${renvois.length} de ces locataires ont déjà reçu leur invitation ` +
+        `pendant cette séance. Les inviter une seconde fois ?`;
+    if (!confirm(question)) return;
+  } else if (!confirm(`Envoyer ${choisis.length} invitation(s) ?`)) return;
 
   const btn = document.getElementById('btnEnvoyer');
   btn.disabled = true;
@@ -278,18 +342,30 @@ async function envoyer() {
     const res = await fetch(WEBHOOK_MAKE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'inviter', locataires: choisis }),
+      body: JSON.stringify({ action: 'inviter',
+        locataires: choisis.map(function (x) {
+          var c = composerInvitation(x);
+          return Object.assign({}, x, { objet_courriel: c.objet, corps_courriel: c.corps });
+        }) }),
     });
     const corps = await res.text();
     if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
-    texte('etat', `Envoi accepté par Make — réponse : ${echapper(corps)}.`);
+    const heure = new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
+    choisis.forEach(x => { dejaInvites[cleInvitation(x)] = heure; });
+    document.querySelectorAll('input[type=checkbox]:checked').forEach(c => { c.checked = false; });
+    dessiner();
+    texte('etat', `${choisis.length} invitation(s) envoyée(s) à ${heure}. ` +
+      `Ces lignes sont désormais marquées « invité ».`);
   } catch (e) {
     texte('etat',
       `L'envoi a échoué — ${echapper(e.message || e)}. Aucune invitation n'est ` +
       `partie, ou seulement une partie : vérifiez l'historique du scénario dans Make.`,
       'encart alerte');
   } finally {
-    btn.disabled = false;
+    /* v1.6 — le bouton etait reactive d'office, alors que les lignes venaient
+       d'etre decochees : un bouton actif qui ne fait rien. C'est le compteur
+       qui decide, selon ce qui reste coche. */
+    compter();
   }
 }
 
