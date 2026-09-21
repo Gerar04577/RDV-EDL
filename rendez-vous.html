@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v1.7 — 20/09/2026
+<!-- rendez-vous.html — RDV EDL v1.9 — 20/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -372,6 +372,44 @@ async function rafraichirEcran(message) {
   if (message) montrer("ok", message);
 }
 
+/* v1.8 — LE COURRIEL DE CONFIRMATION EST COMPOSE ICI.
+   Schema repris du scenario d'etat des lieux de Gerard : la page ecrit
+   l'objet et le corps, Make les relaie tels quels. Aucune fonction de date
+   dans Make, donc aucune date en anglais : on ecrit « jeudi 1er octobre
+   2026 », la ou formatDate aurait produit « Thursday ».
+   Ton impersonnel : « Madame, Monsieur », salutations distinguees, aucun
+   prenom. La signature selon l'immeuble reste a trancher. */
+function dateEnLettres(iso){
+  var d = new Date(iso + "T12:00:00");
+  var j = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"][d.getDay()];
+  var m = ["janvier","février","mars","avril","mai","juin","juillet","août",
+           "septembre","octobre","novembre","décembre"][d.getMonth()];
+  var n = d.getDate();
+  return j + " " + (n === 1 ? "1er" : n) + " " + m + " " + d.getFullYear();
+}
+
+function composerConfirmation(c, studio){
+  var nature = contexte.type === "EDLS" ? "de sortie" : "d'entrée";
+  /* v1.9 — l'adresse de la page, SANS ses parametres.
+     location.href garde tout ce qui precede le diese, y compris les
+     parametres de suivi que les messageries ajoutent aux liens cliques
+     (« ?fbclid=… », « ?utm_source=… »). Le lien du courriel les aurait
+     recopies. L'origine et le chemin suffisent. */
+  var lien = location.origin + location.pathname + "#" + contexte.uniteId + "-" +
+             (contexte.type === "EDLS" ? "sortie" : "entree");
+  return {
+    objet: "Confirmation — état des lieux " + nature + " — " + studio,
+    corps: "Madame, Monsieur,\n\n" +
+      "Nous vous confirmons le rendez-vous pour l'état des lieux " + nature +
+      " de votre logement " + studio + ", le " + dateEnLettres(c.date) +
+      " à " + c.heure + ".\n\n" +
+      "Pour modifier ou annuler ce rendez-vous, utilisez le lien suivant :\n\n" +
+      lien + "\n\n" +
+      "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
+      "distinguées."
+  };
+}
+
 /* --- reservation ------------------------------------------------------- */
 var enCours = false;   // v1.2 — voir ci-dessous
 
@@ -391,6 +429,7 @@ async function reserver(cle){
   el("zone").innerHTML = "";
   montrer("", "Enregistrement…");
   var l = donnees.locataire || {};
+  var courriel = composerConfirmation(c, l.studio || contexte.uniteId);
   try {
     /* v1.2 — la correction relevee a l'identification (nom ou courriel qui
        ne concordait pas) etait calculee puis oubliee. Elle part desormais
@@ -401,7 +440,9 @@ async function reserver(cle){
       studio: l.studio || "", nom: reconnu.nom, email: reconnu.email,
       correction: reconnu.correction || "",
       ancienneValeur: reconnu.correction === "email" ? (l.email || "")
-                    : reconnu.correction === "nom" ? (l.nom || "") : "" });
+                    : reconnu.correction === "nom" ? (l.nom || "") : "",
+      objet_courriel: courriel.objet,
+      corps_courriel: courriel.corps });
   } catch (e){
     enCours = false;
     afficher();
