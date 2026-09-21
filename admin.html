@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v3.0 — 20/09/2026
+<!-- admin.html — RDV EDL v3.2 — 20/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -77,7 +77,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v3.0 — journées mixtes, sans écrasement</div>
+  <div class="version">v3.2 — journées mixtes, sans écrasement</div>
 </header>
 
 <main>
@@ -287,6 +287,15 @@ function composerJournee(iso, b){
            existantsS: dejaS, existantsE: dejaE };
 }
 
+/* v3.1 — une journee deja pleine ne recoit rien et n'apparait donc pas dans
+   le calendrier. Sans ce compte a part, l'ecran ne savait pas qu'elle
+   existait, et accusait les plafonds quand tout etait simplement deja en
+   place. */
+function dejaEnPlace(b){
+  return (existants || []).filter(function(c){
+    var d = dateDeCle(c.cle); return d >= b.debut && d <= b.fin; }).length;
+}
+
 function composerCalendrier(b){
   var jours = [], iso = b.debut, garde = 0, tS = 0, tE = 0, tronque = false;
   while (iso <= b.fin){
@@ -372,8 +381,19 @@ async function recalculer(){
   calendrier = composerCalendrier(b);
   var n = calendrier.jours.length;
   if (!n){
-    montrer("ko", "Aucune journée ne s'ouvre avec ces bornes. Vérifiez les plafonds.");
-    el("calendrier").innerHTML = ""; el("compte").textContent = "—"; return;
+    var enPlace = dejaEnPlace(b);
+    /* v3.1 — deux causes tres differentes, un seul message jusqu'ici. */
+    if (enPlace){
+      montrer("ok", "Ces journées sont déjà complètes : <b>" + enPlace +
+        "</b> créneau" + (enPlace > 1 ? "x" : "") + " en place sur la plage, " +
+        "aucun à ajouter.");
+      el("compte").textContent = "0 à ajouter · " + enPlace + " déjà en place";
+    } else {
+      montrer("ko", "Aucune journée ne s'ouvre avec ces bornes : " +
+        "vérifiez les plafonds et les dates des périodes.");
+      el("compte").textContent = "—";
+    }
+    el("calendrier").innerHTML = ""; return;
   }
 
   /* v2.3 — LE RESUME RAPPELLE LES BORNES EMPLOYEES.
@@ -414,8 +434,10 @@ async function recalculer(){
     "<th>Contenu</th><th>Heures</th></tr>" + lignes + "</table></div>";
 
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
-  var dejaLa = calendrier.jours.reduce(function(s,j){
-    return s + (j.existantsS || 0) + (j.existantsE || 0); }, 0);
+  /* v3.1 — l'existant se compte sur TOUTE la plage. Additionne journee par
+     journee, il omettait les journees deja pleines, qui ne recoivent rien et
+     n'apparaissent donc pas dans le calendrier. */
+  var dejaLa = dejaEnPlace(b);
   el("compte").textContent = total + " à ajouter" +
     (dejaLa ? " · " + dejaLa + " déjà en place" : "") + " sur " + n + " journées";
 }
@@ -425,16 +447,25 @@ async function recalculer(){
    passe. Un creneau deja present n'est pas recree. */
 async function envoyer(){
   if (!calendrier || !calendrier.jours.length){
-    montrer("ko", "Rien à envoyer : recalculez d'abord."); return;
+    /* v3.2 — « recalculez d'abord » etait un faux conseil quand les
+       journees etaient simplement completes : il n'y avait rien a
+       recalculer. On dit la vraie raison. */
+    var enPlace = existants ? dejaEnPlace(bornes()) : 0;
+    montrer(enPlace ? "ok" : "ko", enPlace
+      ? "Rien à envoyer : ces journées sont déjà complètes (" + enPlace +
+        " créneau" + (enPlace > 1 ? "x" : "") + " en place)."
+      : "Rien à envoyer : aucune journée ne s'ouvre avec ces réglages.");
+    return;
   }
   if (calendrier.tronque){
     montrer("ko", "Plage trop longue : corrigez le dernier jour avant d'envoyer.");
     return;
   }
   if (existants === null){
-    montrer("ko", "Les créneaux déjà ouverts n'ont pas pu être lus : " +
-      "l'envoi est refusé. Appuyez sur Recalculer.");
-    return;
+    /* on retente la lecture avant de conclure a une panne */
+    if (!(await lireExistants())) return;
+    await recalculer();
+    if (!calendrier || !calendrier.jours.length) return;
   }
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
   if (!confirm("Envoyer " + total + " créneaux sur " +
@@ -488,8 +519,17 @@ async function envoyer(){
 
   champs.forEach(function(id){ el(id).disabled = false; });
   el("envoyer").disabled = false;
-  /* ce qui vient d'etre envoye fait desormais partie de l'existant */
+  /* v3.2 — APRES UN ENVOI, L'ECRAN SE REMET A JOUR.
+     Il affichait encore « 5 à ajouter » alors que tout venait de partir, et
+     un second clic annoncait une panne de lecture qui n'avait jamais eu
+     lieu. On relit ce qui est desormais en place, et on redessine — en
+     gardant le message de fin d'envoi, que le recalcul effacerait. */
+  var messageFin = el("etat").innerHTML, classeFin = el("etat").className;
   existants = null;
+  await recalculer();
+  if (existants !== null){
+    el("etat").innerHTML = messageFin; el("etat").className = classeFin;
+  }
   if (!echecs.length){
     montrer("ok", "Terminé : <b>" + envoyes + "</b> créneaux envoyés sur " +
       journees.length + " journées. Les créneaux déjà présents ont été ignorés.");
@@ -503,7 +543,21 @@ async function envoyer(){
 /* v3.0 — LA LECTURE DE L'EXISTANT CONDITIONNE TOUT.
    Si elle echoue, on n'ouvre pas : travailler a l'aveugle reviendrait a
    empiler des creneaux sur des journees deja pleines. */
-async function lireExistants(){
+/* v3.2 — UNE SEULE LECTURE A LA FOIS.
+   Chaque frappe dans un champ relance un recalcul. Sans verrou, quatre
+   frappes lancaient quatre lectures de Make en parallele : elles pouvaient
+   revenir dans le desordre et laisser a l'ecran un calendrier perime. Les
+   appels qui arrivent pendant une lecture en cours l'attendent. */
+var lectureEnCours = null;
+
+function lireExistants(){
+  if (lectureEnCours) return lectureEnCours;
+  lectureEnCours = lireExistantsVraiment().then(function(r){
+    lectureEnCours = null; return r; });
+  return lectureEnCours;
+}
+
+async function lireExistantsVraiment(){
   montrer("", "Lecture des créneaux déjà ouverts…");
   var minuterie = new AbortController();
   var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
