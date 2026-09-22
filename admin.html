@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v3.6 — 21/09/2026
+<!-- admin.html — RDV EDL v4.3 — 22/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -67,6 +67,11 @@
           font-size:11.5px; font-weight:700; margin-right:5px; }
   .puce.s { background:var(--sortie); color:var(--sortie-t); }
   .puce.e { background:var(--entree); color:var(--entree-t); }
+  .puce.x { background:#E5E7EB; color:#374151; font-weight:600; }
+  td .deja { color:#4B5563; font-size:12.5px; }
+  td .ajout { color:#14532D; font-weight:700; font-size:13px; }
+  td .complet { color:#6B7280; font-style:italic; font-size:12.5px; }
+  .legende { font-size:12.5px; color:#4B5563; margin:4px 0 6px; }
   details summary { cursor:pointer; font-weight:600; color:var(--fonce); }
   details div { font-size:13.5px; line-height:1.6; padding-top:8px; }
   .barre { position:fixed; left:0; right:0; bottom:0; background:#fff;
@@ -81,7 +86,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v3.6 — journées mixtes, sans écrasement</div>
+  <div class="version">v4.3 — journées mixtes, sans écrasement</div>
 </header>
 
 <main>
@@ -109,7 +114,14 @@
     <p><b>On ouvre large.</b> Il y aura beaucoup plus de places que de
        locataires : c'est voulu. Un créneau non réservé ne coûte rien, et la
        rareté des dernières dates pousse à réserver tôt.</p>
-    <p><b>Réouvrir est sans danger.</b> Un créneau déjà présent n'est pas
+    <p><b>Les trois bornes sont des dates fixes de la saison.</b> Changer la
+  plage à ouvrir ne les déplace pas : ouvrir du 1er au 8 septembre, c'est ouvrir
+  cette partie de la saison, avec ses entrées. Seul un changement d'année les fait
+  suivre, en gardant leur jour et leur mois.</p>
+  <p><b>Le calendrier montre tout.</b> Les créneaux déjà ouverts y figurent en
+  gris ; ceux qui vont s'ajouter, en couleur. Une journée pleine apparaît quand
+  même, marquée « complète », et ne reçoit plus rien.</p>
+  <p><b>Réouvrir est sans danger.</b> Un créneau déjà présent n'est pas
        recréé et les réservations existantes ne sont pas touchées. Seuls les
        créneaux nouveaux s'ajoutent.</p>
   </div>
@@ -157,15 +169,15 @@
 
 <div class="champ">
   <label for="maxDense">Sorties, période dense</label>
-  <input autocomplete="off" type="number" id="maxDense" value="5" min="0" max="8">
+  <input autocomplete="off" type="number" id="maxDense" step="1" inputmode="numeric" value="5" min="0" max="8">
 </div>
 <div class="champ">
   <label for="maxRalenti">Sorties, période ralentie</label>
-  <input autocomplete="off" type="number" id="maxRalenti" value="2" min="0" max="8">
+  <input autocomplete="off" type="number" id="maxRalenti" step="1" inputmode="numeric" value="2" min="0" max="8">
 </div>
 <div class="champ">
   <label for="maxEntrees">Entrées</label>
-  <input autocomplete="off" type="number" id="maxEntrees" value="4" min="0" max="8">
+  <input autocomplete="off" type="number" id="maxEntrees" step="1" inputmode="numeric" value="4" min="0" max="8">
 </div>
 
 <button class="bouton clair" onclick="valeursParDefaut()">Revenir aux valeurs de référence</button>
@@ -183,7 +195,7 @@
   <button class="bouton" id="envoyer" onclick="envoyer()">Envoyer</button>
 </div>
 
-<script src="bandeau-edl.js?v=1.1"></script>
+<script src="bandeau-edl.js?v=1.2"></script>
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
 
@@ -204,6 +216,32 @@ var existants = null;   // ce que Make contient deja, ou null si inconnu
    L'ecran lit donc d'abord ce que Make contient, et ne pose que ce qui tient
    entre les creneaux existants. Si cette lecture echoue, il refuse d'ouvrir
    plutot que de travailler a l'aveugle. */
+/* v4.0 — UNE LISTE VENUE DE MAKE N'EST PAS TOUJOURS UNE LISTE.
+   Si le scenario renvoie un objet ou un texte a la place — un agregateur
+   regle autrement, une reponse modifiee a la main — « .filter » plantait, et
+   l'ecran restait fige sur sa roue, sans croix ni explication. On accepte
+   une liste, on enveloppe un objet isole, et on ignore le reste. */
+function enListe(x){
+  if (Array.isArray(x)) return x;
+  if (x && typeof x === "object") return [x];
+  return [];
+}
+/* v4.1 — LES MESSAGES DU NAVIGATEUR SONT EN ANGLAIS.
+   Sans connexion, Safari repond « Load failed », Chrome « Failed to fetch »,
+   Firefox « NetworkError… » : la page les recopiait tels quels, et un
+   locataire au reseau faible lisait de l'anglais sans comprendre. On traduit
+   les causes connues ; le reste est rendu tel quel, faute de mieux. */
+function expliquerErreur(e){
+  if (e && e.name === "AbortError") return "pas de réponse après 30 secondes";
+  var m = String((e && e.message) || e || "");
+  if (/load failed|failed to fetch|networkerror|network request failed|internet connection appears to be offline/i.test(m))
+    return "pas de connexion Internet — vérifiez votre réseau";
+  return m;
+}
+/* v4.2 — LES PLURIELS S'ACCORDENT AU NOMBRE.
+   « 5 créneaux envoyés sur 1 journées », « 1 journée(s) en échec » : la
+   forme figee ou a parentheses est fausse une fois sur deux. */
+function pl(n, un, plusieurs){ return n + " " + (n > 1 ? plusieurs : un); }
 function minutes(h){ return Number(h.slice(0,2)) * 60 + Number(h.slice(3,5)); }
 
 /* Le type est inscrit a la fin de la cle : « 2026-10-01_09h00_EDLS ». */
@@ -339,10 +377,12 @@ var REFERENCE = { debut: AN + "-08-10", borne1: AN + "-08-25", borne2: AN + "-08
 
 function valeursParDefaut(){
   Object.keys(REFERENCE).forEach(function(id){ el(id).value = REFERENCE[id]; });
-  /* la reference sert de nouveau point de depart : sans cela, le prochain
-     deplacement du debut se calculerait depuis l'ancienne valeur. */
-  debutPrecedent = REFERENCE.debut;
   recalculer();
+}
+
+function plafond(id){
+  var n = Math.floor(Number(String(el(id).value).replace(",", ".")));
+  return isFinite(n) && n > 0 ? n : 0;
 }
 
 function bornes(){
@@ -350,9 +390,11 @@ function bornes(){
     debut: el("debut").value, fin: el("fin").value,
     borne1: el("borne1").value, borne2: el("borne2").value,
     debutEntrees: el("debutEntrees").value,
-    maxDense: Number(el("maxDense").value),
-    maxRalenti: Number(el("maxRalenti").value),
-    maxEntrees: Number(el("maxEntrees").value)
+    /* v4.3 — un plafond est un nombre entier de rendez-vous : « 2,5 »
+       donnait 3 creneaux. On garde la partie entiere, jamais moins de zero. */
+    maxDense: plafond("maxDense"),
+    maxRalenti: plafond("maxRalenti"),
+    maxEntrees: plafond("maxEntrees")
   };
 }
 
@@ -408,6 +450,67 @@ function verifierBornes(b){
   return null;
 }
 
+/* v3.7 — LE CALENDRIER MONTRE CE QUI EST DEJA OUVERT.
+   Il ne montrait que ce qu'il allait ajouter : une journee pleine
+   n'apparaissait pas, et l'ecran d'une plage complete etait vide. On ne
+   voyait nulle part les creneaux deja ouverts, seulement leur nombre.
+   Chaque journee de la plage qui porte quelque chose est desormais listee :
+   l'existant en gris, ce qui va s'ajouter en couleur. */
+function echapperHTML(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; });
+}
+
+function dessinerCalendrier(b){
+  var parJour = {};
+  function jour(iso){ return parJour[iso] = parJour[iso] ||
+    { date: iso, anciens: [], nouveaux: [] }; }
+  (existants || []).forEach(function(c){
+    var d = dateDeCle(c.cle);
+    if (d >= b.debut && d <= b.fin)
+      jour(d).anciens.push({ heure: c.heure, type: typeDeCle(c.cle) });
+  });
+  ((calendrier && calendrier.jours) || []).forEach(function(j){
+    j.creneaux.forEach(function(c){ jour(j.date).nouveaux.push({ heure: c.heure, type: c.type }); });
+  });
+  var dates = Object.keys(parJour).sort();
+  if (!dates.length){ el("calendrier").innerHTML = ""; return; }
+
+  function compte(liste, type, mot){
+    var n = liste.filter(function(x){ return x.type === type; }).length;
+    return n ? n + " " + mot + (n > 1 ? "s" : "") : "";
+  }
+  var lignes = dates.map(function(d){
+    var j = parJour[d];
+    var tout = j.anciens.map(function(x){ return { heure: x.heure, type: x.type, ancien: true }; })
+      .concat(j.nouveaux.map(function(x){ return { heure: x.heure, type: x.type, ancien: false }; }))
+      .sort(function(a, c){ return a.heure < c.heure ? -1 : a.heure > c.heure ? 1 : 0; });
+    var dejaTxt = [compte(j.anciens, "EDLS", "sortie"), compte(j.anciens, "EDLE", "entrée")]
+                  .filter(Boolean).join(", ");
+    var ajoutTxt = [compte(j.nouveaux, "EDLS", "sortie"), compte(j.nouveaux, "EDLE", "entrée")]
+                  .filter(Boolean).join(", ");
+    return "<tr><td>" + enFrancais(d) + "</td><td>" +
+      (dejaTxt ? '<div class="deja">' + dejaTxt + " ouverte" +
+        (j.anciens.length > 1 ? "s" : "") + "</div>" : "") +
+      (ajoutTxt ? '<div class="ajout">+ ' + ajoutTxt + "</div>"
+                : '<div class="complet">complète</div>') +
+      "</td><td>" + tout.map(function(x){
+        /* v3.8 — une cle sans type recevait l'etiquette « E » : tout ce qui
+           n'etait pas une sortie passait pour une entree. Et l'horaire venu
+           de Make etait recopie tel quel dans la page. */
+        var lettre = x.type === "EDLS" ? "S" : x.type === "EDLE" ? "E" : "?";
+        return '<span class="puce ' + (x.ancien ? "x" : (x.type === "EDLS" ? "s" : "e")) +
+               '">' + echapperHTML(x.heure) + (x.ancien ? " " + lettre : "") + "</span>";
+      }).join(" ") + "</td></tr>";
+  }).join("");
+
+  el("calendrier").innerHTML =
+    '<div class="legende"><span class="puce x">gris</span> déjà ouvert · ' +
+    '<span class="puce s">sortie</span><span class="puce e">entrée</span> à ajouter</div>' +
+    '<div class="encart" style="padding:4px 10px"><table><tr><th>Journée</th>' +
+    "<th>Contenu</th><th>Heures</th></tr>" + lignes + "</table></div>";
+}
+
 async function recalculer(){
   if (existants === null){
     if (!(await lireExistants())) return;
@@ -429,6 +532,9 @@ async function recalculer(){
         "</b> créneau" + (enPlace > 1 ? "x" : "") + " en place sur la plage, " +
         "aucun à ajouter.");
       el("compte").textContent = "0 à ajouter · " + enPlace + " déjà en place";
+      calendrier = { jours: [] };
+      dessinerCalendrier(b);
+      return;
     } else {
       montrer("ko", "Aucune journée ne s'ouvre avec ces bornes : " +
         "vérifiez les plafonds et les dates des périodes.");
@@ -457,22 +563,7 @@ async function recalculer(){
     montrer("", resume);
   }
 
-  var lignes = calendrier.jours.map(function(j){
-    return "<tr><td>" + enFrancais(j.date) + "</td><td>" +
-      (j.edls ? '<span class="puce s">' + j.edls + " sortie" + (j.edls>1?"s":"") + "</span>" : "") +
-      (j.edle ? '<span class="puce e">' + j.edle + " entrée" + (j.edle>1?"s":"") + "</span>" : "") +
-      /* v2.2 — la colonne des heures ne disait pas lesquelles etaient des
-         entrees. Sur une journee mixte, impossible de verifier avant
-         d'envoyer — or c'est justement a cela que ce tableau sert. */
-      "</td><td>" + j.creneaux.map(function(c){
-         return '<span class="puce ' + (c.type === "EDLS" ? "s" : "e") + '">' +
-                c.heure + "</span>";
-      }).join(" ") + "</td></tr>";
-  }).join("");
-
-  el("calendrier").innerHTML =
-    '<div class="encart" style="padding:4px 10px"><table><tr><th>Journée</th>' +
-    "<th>Contenu</th><th>Heures</th></tr>" + lignes + "</table></div>";
+  dessinerCalendrier(b);
 
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
   /* v3.1 — l'existant se compte sur TOUTE la plage. Additionne journee par
@@ -480,7 +571,7 @@ async function recalculer(){
      n'apparaissent donc pas dans le calendrier. */
   var dejaLa = dejaEnPlace(b);
   el("compte").textContent = total + " à ajouter" +
-    (dejaLa ? " · " + dejaLa + " déjà en place" : "") + " sur " + n + " journées";
+    (dejaLa ? " · " + dejaLa + " déjà en place" : "") + " sur " + pl(n, "journée", "journées");
 }
 
 /* Envoi journee par journee : une panne au milieu reste visible et
@@ -509,8 +600,8 @@ async function envoyer(){
     if (!calendrier || !calendrier.jours.length) return;
   }
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
-  if (!confirm("Envoyer " + total + " créneaux sur " +
-      calendrier.jours.length + " journées ?")) return;
+  if (!confirm("Envoyer " + pl(total, "créneau", "créneaux") + " sur " +
+      pl(calendrier.jours.length, "journée", "journées") + " ?")) return;
 
   /* v2.1 — LE CALENDRIER EST FIGE PENDANT L'ENVOI.
      La boucle lisait calendrier.jours[i] a chaque tour, et rien n'empechait
@@ -553,8 +644,7 @@ async function envoyer(){
       else echecs.push(j.date + " (" + res.status + ")");
     } catch (e){
       clearTimeout(echeance);
-      echecs.push(j.date + (e && e.name === "AbortError"
-        ? " (pas de réponse après 30 s)" : " (" + (e.message || e) + ")"));
+      echecs.push(j.date + " (" + expliquerErreur(e) + ")");
     }
   }
 
@@ -572,11 +662,12 @@ async function envoyer(){
     el("etat").innerHTML = messageFin; el("etat").className = classeFin;
   }
   if (!echecs.length){
-    annoncer("ok", "Terminé : <b>" + envoyes + "</b> créneaux envoyés sur " +
-      journees.length + " journées. Les créneaux déjà présents ont été ignorés.");
+    annoncer("ok", "Terminé : <b>" + pl(envoyes, "créneau envoyé", "créneaux envoyés") +
+      "</b> sur " + pl(journees.length, "journée", "journées") +
+      ". Les créneaux déjà présents ont été ignorés.");
   } else {
-    annoncer("ko", envoyes + " créneaux envoyés, mais " + echecs.length +
-      " journée(s) en échec : " + echecs.join(", ") +
+    annoncer("ko", pl(envoyes, "créneau envoyé", "créneaux envoyés") + ", mais " +
+      pl(echecs.length, "journée en échec", "journées en échec") + " : " + echecs.join(", ") +
       ". Relancez l'envoi : les journées déjà passées ne seront pas dupliquées.");
   }
 }
@@ -614,15 +705,14 @@ async function lireExistantsVraiment(){
     var texte = await res.text();
     if (!res.ok) throw new Error("Make a répondu " + res.status);
     var rep = JSON.parse(texte);
-    existants = (rep.creneaux || []).filter(function(c){
+    existants = enListe(rep && rep.creneaux).filter(function(c){
       return c && c.cle && c.heure; });
     return true;
   } catch (e){
     clearTimeout(echeance);
     existants = null;
     annoncer("ko", "Impossible de lire les créneaux déjà ouverts — " +
-      (e && e.name === "AbortError" ? "pas de réponse après 30 secondes"
-                                    : (e.message || e)) +
+      expliquerErreur(e) +
       ". Sans cette lecture, ouvrir risquerait de surcharger des journées " +
       "déjà remplies. Réessayez avec le bouton Recalculer.");
     el("calendrier").innerHTML = ""; el("compte").textContent = "—";
@@ -631,45 +721,39 @@ async function lireExistantsVraiment(){
   }
 }
 
-/* v3.4 — LES BORNES SUIVENT LE DEBUT DE LA PLAGE.
+/* v3.7 — LES BORNES SONT DES DATES FIXES DE LA SAISON.
 
-   Deplacer le debut de la plage laissait les trois bornes interieures a leur
-   place. Une plage mise au 1er octobre gardait ses bornes en aout : aucune
-   sortie ne s'ouvrait, et rien ne disait pourquoi. C'est ce qui s'est
-   produit le 20/09.
+   La v3.4 les faisait glisser avec le debut de la plage. C'etait une faute
+   de conception : le 25 aout, le 31 aout, le 30 aout sont lies aux baux et
+   aux loyers, ils ne dependent pas de la plage que l'on ouvre. Ouvrir « du
+   1er au 8 septembre » les poussait apres la fin de la plage, et la periode
+   des entrees devenait une periode de sorties denses. Constate le 22/09.
 
-   Desormais, quand le debut bouge de N jours, les trois bornes bougent de
-   N jours : la forme de la saison est conservee, le calendrier se deplace
-   d'un bloc. Et aucune borne ne peut se retrouver avant le debut.
-   La fin de la plage, elle, reste ce que vous avez saisi : on la fixe
-   souvent en second, et la deplacer d'office effacerait votre choix. */
+   Elles ne bougent donc plus. Seule exception : si la plage passe a une
+   AUTRE ANNEE, elles suivent cette annee en gardant leur jour et leur mois —
+   sans quoi ouvrir la saison suivante laisserait les bornes un an en
+   arriere. */
 var BORNES_INTERIEURES = ["borne1", "borne2", "debutEntrees"];
-var debutPrecedent = null;
-
-function decalerJours(iso, n){
-  var d = new Date(iso + "T12:00:00");
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 function dateValide(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(iso || ""); }
 
-function glisserBornes(){
-  var nouveau = el("debut").value;
-  if (!dateValide(nouveau)) return;          // saisie en cours : on attend
-  if (dateValide(debutPrecedent) && nouveau !== debutPrecedent){
-    var ecart = Math.round((new Date(nouveau + "T12:00:00") -
-                            new Date(debutPrecedent + "T12:00:00")) / 86400000);
-    BORNES_INTERIEURES.forEach(function(id){
-      if (dateValide(el(id).value)) el(id).value = decalerJours(el(id).value, ecart);
-    });
-  }
+function ancrerBornesSurAnnee(){
+  var debut = el("debut").value;
+  if (!dateValide(debut)) return;                 // saisie en cours : on attend
+  var an = debut.slice(0, 4);
   BORNES_INTERIEURES.forEach(function(id){
-    if (dateValide(el(id).value) && el(id).value < nouveau) el(id).value = nouveau;
+    var v = el(id).value;
+    if (dateValide(v) && v.slice(0, 4) !== an) {
+      /* v3.9 — un 29 fevrier porte sur une annee non bissextile n'existe pas :
+         le champ de date le refusait et se vidait sans prevenir. On retombe
+         sur le dernier jour du mois. */
+      var mois = Number(v.slice(5, 7)), jour = Number(v.slice(8, 10));
+      var dernier = new Date(Number(an), mois, 0).getDate();
+      el(id).value = an + "-" + v.slice(5, 7) + "-" + String(Math.min(jour, dernier)).padStart(2, "0");
+    }
   });
-  debutPrecedent = nouveau;
 }
 
-function surDebut(){ glisserBornes(); recalculer(); }
+function surDebut(){ ancrerBornesSurAnnee(); recalculer(); }
 el("debut").addEventListener("change", surDebut);
 el("debut").addEventListener("input", surDebut);
 

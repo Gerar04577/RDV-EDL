@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v2.3 — 21/09/2026
+<!-- rendez-vous.html — RDV EDL v2.7 — 22/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -75,16 +75,16 @@
       électronique que vous nous avez communiquée.
     </div>
     <label for="nom">Nom</label>
-    <input type="text" id="nom" autocomplete="off" placeholder="Votre nom">
+    <input type="text" id="nom" autocomplete="name" autocapitalize="words" enterkeyhint="next" placeholder="Votre nom">
     <label for="email">Adresse électronique</label>
-    <input type="email" id="email" autocomplete="off" placeholder="vous@exemple.be">
+    <input type="email" id="email" autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder="vous@exemple.be">
     <button onclick="identifier()">Continuer</button>
   </div>
 
   <div id="zone"></div>
 </main>
 
-<script src="bandeau-edl.js?v=1.1"></script>
+<script src="bandeau-edl.js?v=1.2"></script>
 <script src="signature-edl.js?v=1.0"></script>
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
@@ -155,10 +155,39 @@ function memeNom(saisi, enregistre){
 }
 
 /* --- dates ------------------------------------------------------------- */
-function aujourdhui(){
-  var d = new Date();
-  return d.getFullYear() + "-" +
-    ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0"+d.getDate()).slice(-2);
+/* v2.6 — L'HEURE QUI COMPTE EST CELLE DE BRUXELLES.
+   La page comparait les creneaux a l'heure du telephone. Un etudiant qui
+   prend son rendez-vous de sortie depuis l'etranger n'est pas a l'heure
+   belge : a Tokyo, un creneau belge dans deux heures etait masque ; a
+   Montreal, un creneau deja passe restait propose. Les creneaux sont belges,
+   l'heure de reference l'est aussi. */
+function maintenantBruxelles(){
+  try {
+    var f = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Brussels",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false });
+    var p = {};
+    f.formatToParts(new Date()).forEach(function(x){ p[x.type] = x.value; });
+    var h = p.hour === "24" ? "00" : p.hour;
+    return { date: p.year + "-" + p.month + "-" + p.day, heure: h + ":" + p.minute };
+  } catch (e) {
+    /* un navigateur sans fuseaux nommes : on retombe sur l'heure locale */
+    var d = new Date();
+    return { date: d.getFullYear() + "-" + ("0"+(d.getMonth()+1)).slice(-2) + "-" +
+                   ("0"+d.getDate()).slice(-2),
+             heure: ("0"+d.getHours()).slice(-2) + ":" + ("0"+d.getMinutes()).slice(-2) };
+  }
+}
+function aujourdhui(){ return maintenantBruxelles().date; }
+/* v2.4 — UNE LISTE VENUE DE MAKE N'EST PAS TOUJOURS UNE LISTE.
+   Si le scenario renvoie un objet ou un texte a la place — un agregateur
+   regle autrement, une reponse modifiee a la main — « .filter » plantait, et
+   l'ecran restait fige sur sa roue, sans croix ni explication. On accepte
+   une liste, on enveloppe un objet isole, et on ignore le reste. */
+function enListe(x){
+  if (Array.isArray(x)) return x;
+  if (x && typeof x === "object") return [x];
+  return [];
 }
 function dateDeCle(cle){ return String(cle || "").slice(0, 10); }
 function ecartJours(a, b){
@@ -200,12 +229,20 @@ function creneauxOuverts(d, ctx){
      page aurait propose un creneau vide, et le clic aurait envoye une cle
      nulle. On ecarte donc les entrees sans cle DES DEUX COTES. */
   var pris = {};
-  ((d && d.pris) || []).forEach(function(p){ if (p && p.cle) pris[p.cle] = true; });
+  enListe(d && d.pris).forEach(function(p){ if (p && p.cle) pris[p.cle] = true; });
 
-  var tous = ((d && d.creneaux) || [])
+  var tous = enListe(d && d.creneaux)
     .filter(function(c){ return c && c.cle && c.date && c.heure; })
     .filter(function(c){ return !pris[c.cle]; });
-  var aVenir = tous.filter(function(c){ return dateDeCle(c.cle) >= aujourdhui(); });
+  /* v2.5 — les DATES passees etaient ecartees, pas les HEURES : a 10 h, le
+     creneau de 8 h du jour meme restait propose, et reservable. */
+  var heureCourante = maintenantBruxelles().heure;
+  var aVenir = tous.filter(function(c){
+    var d = dateDeCle(c.cle);
+    if (d > aujourdhui()) return true;
+    if (d < aujourdhui()) return false;
+    return String(c.heure || "") > heureCourante;
+  });
   if (!aVenir.length){
     return { liste: [], message: tous.length
       ? "Toutes les dates proposées sont passées. Prenez contact avec nous."
@@ -246,6 +283,18 @@ function creneauxOuverts(d, ctx){
 }
 
 /* --- appels a Make ----------------------------------------------------- */
+/* v2.5 — LES MESSAGES DU NAVIGATEUR SONT EN ANGLAIS.
+   Sans connexion, Safari repond « Load failed », Chrome « Failed to fetch »,
+   Firefox « NetworkError… » : la page les recopiait tels quels, et un
+   locataire au reseau faible lisait de l'anglais sans comprendre. On traduit
+   les causes connues ; le reste est rendu tel quel, faute de mieux. */
+function expliquerErreur(e){
+  if (e && e.name === "AbortError") return "pas de réponse après 30 secondes";
+  var m = String((e && e.message) || e || "");
+  if (/load failed|failed to fetch|networkerror|network request failed|internet connection appears to be offline/i.test(m))
+    return "pas de connexion Internet — vérifiez votre réseau";
+  return m;
+}
 async function appeler(corps){
   var minuterie = new AbortController();
   var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
@@ -281,8 +330,7 @@ async function appeler(corps){
     }
   } catch (e){
     clearTimeout(echeance);
-    throw new Error(e && e.name === "AbortError"
-      ? "pas de réponse après 30 secondes" : (e.message || e));
+    throw new Error(expliquerErreur(e));
   }
 }
 
@@ -463,7 +511,7 @@ async function reserver(cle){
      heurtait a la cle deja prise — et le locataire lisait « ce creneau
      vient d'etre reserve » alors que c'etait lui qui venait de le prendre. */
   if (enCours) return;
-  var c = (donnees.creneaux || []).filter(function(x){ return x.cle === cle; })[0];
+  var c = enListe(donnees.creneaux).filter(function(x){ return x && x.cle === cle; })[0];
   if (!c) return;
   if (!confirm("Confirmer le rendez-vous du " + enFrancais(dateDeCle(cle)) +
       " à " + c.heure + " ?")) return;
@@ -554,6 +602,21 @@ async function annuler(){
     montrer("ko", (rep && rep.message) || "L'annulation n'a pas abouti.");
   }
 }
+
+/* v2.7 — LE CLAVIER DU TELEPHONE.
+   La touche « Aller » ne faisait rien : le locataire devait fermer le
+   clavier et chercher le bouton. Desormais, « Suivant » dans le nom passe au
+   courriel, et « Aller » dans le courriel lance la verification.
+   Le remplissage automatique etait coupe sur ces deux champs. Pour un
+   locataire, c'est l'inverse qu'il faut : son telephone connait son adresse,
+   la lui proposer evite les fautes de frappe — premiere cause de refus a
+   l'identification. */
+el("nom").addEventListener("keydown", function(ev){
+  if (ev.key === "Enter"){ ev.preventDefault(); el("email").focus(); }
+});
+el("email").addEventListener("keydown", function(ev){
+  if (ev.key === "Enter"){ ev.preventDefault(); el("email").blur(); identifier(); }
+});
 
 /* --- ouverture --------------------------------------------------------- */
 (function(){

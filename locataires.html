@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v1.9 — 21/09/2026 -->
+<!-- locataires.html — RDV EDL v2.2 — 22/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -59,7 +59,7 @@
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v1.9 — lecture seule de Gestion Loyers</div>
+  <div class="version">v2.2 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
@@ -106,7 +106,7 @@
 <script src="graph-storage.js?v=1.1"></script>
 <script src="liste-edl.js?v=1.4"></script>
 <script src="signature-edl.js?v=1.0"></script>
-<script src="bandeau-edl.js?v=1.1"></script>
+<script src="bandeau-edl.js?v=1.2"></script>
 <script>
 /* locataires.html — RDV EDL v1.0 — 18/09/2026
    Écran de consultation et de sélection. AUCUN ENVOI AUTOMATIQUE : la liste
@@ -149,7 +149,7 @@ function echapper(s) {
    de repartir, sans quoi estConnecte() continuerait de le croire bon. */
 async function reconnecter() {
   try { seDeconnecter(); } catch (e) { /* rien a effacer */ }
-  texte('etat', 'Connexion a Microsoft...');
+  texte('etat', 'Connexion à Microsoft…');
   await demarrerConnexion();
 }
 
@@ -168,7 +168,7 @@ async function recharger() {
        null s'il n'y parvient pas : c'est la seule reponse qui fasse foi. */
     const jeton = await obtenirJetonValide();
     if (!jeton) {
-      texte('etat', 'Connexion a Microsoft...');
+      texte('etat', 'Connexion à Microsoft…');
       await demarrerConnexion();
       return;                       // la page revient par index.html
     }
@@ -178,7 +178,7 @@ async function recharger() {
 
     texte('etat',
       `Liste établie à partir de <b>${echapper(r.fichiers.rentree)}</b> et ` +
-      `<b>${echapper(r.fichiers.mois)}</b> — ${r.lignes.length} ligne(s).`, 'encart ok');
+      `<b>${echapper(r.fichiers.mois)}</b> — ${pl(r.lignes.length, 'ligne', 'lignes')}.`, 'encart ok');
 
     if (r.avertissements.length) {
       document.getElementById('avertissements').innerHTML =
@@ -189,13 +189,13 @@ async function recharger() {
     dessiner();
 
   } catch (e) {
-    const message = String((e && e.message) || e);
+    const message = expliquerErreur(e);   // v2.1 — « Load failed » traduit
     const jetonEnCause = /[Jj]eton|401|token/.test(message);
     texte('etat',
-      `La liste n'a pas pu etre etablie — ${echapper(message)}.` +
+      `La liste n'a pas pu être établie — ${echapper(message)}.` +
       (jetonEnCause
         ? ` <button class="bouton" style="margin-top:10px"
-             onclick="reconnecter()">Se reconnecter a Microsoft</button>`
+             onclick="reconnecter()">Se reconnecter à Microsoft</button>`
         : ''),
       'encart alerte');
     document.getElementById('compte').textContent = '—';
@@ -245,7 +245,7 @@ function compter() {
   const n = selection().length;
   const sansAdresse = lignesEDL.filter(l => l.adresseManquante).length;
   document.getElementById('compte').innerHTML =
-    `${n} sélectionné(s) sur ${lignesEDL.length}` +
+    `${pl(n, 'sélectionné', 'sélectionnés')} sur ${lignesEDL.length}` +
     (sansAdresse ? ` — <span class="rouge">${sansAdresse} sans adresse</span>` : '');
   document.getElementById('btnEnvoyer').disabled = n === 0;
 }
@@ -266,7 +266,7 @@ async function mettreAJour() {
     texte('etat', "Rien à mettre à jour : rechargez d'abord la liste.", 'encart alerte');
     return;
   }
-  if (!confirm(`Mettre à jour la liste des ${lignesEDL.length} locataires dans Make ?`)) return;
+  if (!confirm((lignesEDL.length === 1 ? `Mettre à jour le locataire de la liste dans Make ?` : `Mettre à jour la liste des ${lignesEDL.length} locataires dans Make ?`))) return;
 
   const btn = document.getElementById('btnMaj');
   btn.disabled = true;
@@ -283,13 +283,13 @@ async function mettreAJour() {
     clearTimeout(echeance);
     const corps = await res.text();
     if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
-    texte('etat', `Liste mise à jour dans Make : <b>${lignesEDL.length}</b> ligne(s). ` +
+    texte('etat', `Liste mise à jour dans Make : <b>${pl(lignesEDL.length, 'ligne', 'lignes')}</b>. ` +
       `Les locataires peuvent maintenant être reconnus.`, 'encart ok');
   } catch (e) {
     clearTimeout(echeance);
     texte('etat',
       `La mise à jour a échoué — ${echapper(
-        e && e.name === 'AbortError' ? 'pas de réponse après 30 secondes' : (e.message || e))}. ` +
+        expliquerErreur(e))}. ` +
       `La liste dans Make est restée telle quelle.`, 'encart alerte');
   } finally {
     btn.disabled = false;
@@ -314,6 +314,22 @@ function signer(uniteId){
   return "Jean-Marc Gérard";
 }
 
+/* v2.1 — LES MESSAGES DU NAVIGATEUR SONT EN ANGLAIS.
+   Sans connexion, Safari repond « Load failed », Chrome « Failed to fetch »,
+   Firefox « NetworkError… » : la page les recopiait tels quels, et un
+   locataire au reseau faible lisait de l'anglais sans comprendre. On traduit
+   les causes connues ; le reste est rendu tel quel, faute de mieux. */
+function expliquerErreur(e){
+  if (e && e.name === "AbortError") return "pas de réponse après 30 secondes";
+  var m = String((e && e.message) || e || "");
+  if (/load failed|failed to fetch|networkerror|network request failed|internet connection appears to be offline/i.test(m))
+    return "pas de connexion Internet — vérifiez votre réseau";
+  return m;
+}
+/* v2.2 — LES PLURIELS S'ACCORDENT AU NOMBRE.
+   « 1 invitation(s) envoyée(s) », « 1 journée(s) en échec » : la forme a
+   parentheses est lisible, mais maladroite, et fausse une fois sur deux. */
+function pl(n, un, plusieurs){ return n + " " + (n > 1 ? plusieurs : un); }
 function composerInvitation(l) {
   var nature = l.type === 'EDLS' ? 'de sortie' : "d'entrée";
   /* v1.5 — un studio vide donnait « État des lieux — » et « votre logement
@@ -361,11 +377,11 @@ async function envoyer() {
       : `${renvois.length} de ces locataires ont déjà reçu leur invitation ` +
         `pendant cette séance. Les inviter une seconde fois ?`;
     if (!confirm(question)) return;
-  } else if (!confirm(`Envoyer ${choisis.length} invitation(s) ?`)) return;
+  } else if (!confirm(`Envoyer ${pl(choisis.length, 'invitation', 'invitations')} ?`)) return;
 
   const btn = document.getElementById('btnEnvoyer');
   btn.disabled = true;
-  texte('etat', `Envoi de ${choisis.length} invitation(s)…`);
+  texte('etat', `Envoi de ${pl(choisis.length, 'invitation', 'invitations')}…`);
 
   try {
     const res = await fetch(WEBHOOK_MAKE, {
@@ -383,11 +399,11 @@ async function envoyer() {
     choisis.forEach(x => { dejaInvites[cleInvitation(x)] = heure; });
     document.querySelectorAll('input[type=checkbox]:checked').forEach(c => { c.checked = false; });
     dessiner();
-    texte('etat', `${choisis.length} invitation(s) envoyée(s) à ${heure}. ` +
+    texte('etat', `${pl(choisis.length, 'invitation envoyée', 'invitations envoyées')} à ${heure}. ` +
       `Ces lignes sont désormais marquées « invité ».`, 'encart ok');
   } catch (e) {
     texte('etat',
-      `L'envoi a échoué — ${echapper(e.message || e)}. Aucune invitation n'est ` +
+      `L'envoi a échoué — ${echapper(expliquerErreur(e))}. Aucune invitation n'est ` +
       `partie, ou seulement une partie : vérifiez l'historique du scénario dans Make.`,
       'encart alerte');
   } finally {

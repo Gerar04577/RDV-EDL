@@ -1,4 +1,4 @@
-// bandeau-edl.js — RDV EDL v1.1 — 21/09/2026
+// bandeau-edl.js — RDV EDL v1.2 — 22/09/2026
 //
 // LE BANDEAU DES MESSAGES, COMMUN AUX QUATRE PAGES.
 //
@@ -114,4 +114,19 @@
   };
 
   window.addEventListener("resize", decaler);
+
+  /* v1.2 — UN FILET POUR L'IMPREVU.
+     Une erreur non prevue pendant une operation laissait le bandeau « en
+     cours » tourner pour toujours : il n'a pas de croix, et rien ne venait le
+     remplacer. L'utilisateur restait devant une roue, sans savoir si son
+     rendez-vous etait pris. Toute erreur survenant pendant qu'une roue tourne
+     la remplace par un message rouge, qui dit quoi faire. */
+  function secourir() {
+    if (zone && zone.classList.contains("visible") && zone.dataset.nature === "encours") {
+      window.bandeauEDL("ko", "Une erreur inattendue s'est produite. " +
+        "Rechargez la page pour voir où en est l'opération.");
+    }
+  }
+  window.addEventListener("unhandledrejection", secourir);
+  window.addEventListener("error", secourir);
 })();
