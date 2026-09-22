@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v3.4 — 21/09/2026
+<!-- admin.html — RDV EDL v3.6 — 21/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -35,6 +35,10 @@
   main { padding:14px 12px; max-width:760px; margin:0 auto; }
   .encart { background:#fff; border:1px solid var(--bord); border-radius:10px;
             padding:13px; margin:12px 0; font-size:14px; line-height:1.55; }
+  /* v3.5 — l'etat du formulaire, en couleurs franches */
+  #etat { font-size:16px; font-weight:600; border-width:2px; border-left-width:8px; }
+  #etat.ok { border-color:#16A34A; background:#DCFCE7; color:#14532D; }
+  #etat.ko { border-color:#DC2626; background:#FEE2E2; color:#7F1D1D; }
   .encart.ok { border-color:var(--vert); background:#EEF9F5; }
   .encart.ko { border-color:var(--rouge); background:#FDF3F2; color:var(--rouge); }
   h2 { font-size:15px; color:var(--fonce); margin:20px 0 6px;
@@ -77,7 +81,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v3.4 — journées mixtes, sans écrasement</div>
+  <div class="version">v3.6 — journées mixtes, sans écrasement</div>
 </header>
 
 <main>
@@ -179,6 +183,7 @@
   <button class="bouton" id="envoyer" onclick="envoyer()">Envoyer</button>
 </div>
 
+<script src="bandeau-edl.js?v=1.1"></script>
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
 
@@ -351,8 +356,28 @@ function bornes(){
   };
 }
 
+/* Traduit la classe historique d'un message en nature de bandeau. */
+function natureDe(classe, html){
+  var c = String(classe || "");
+  if (/\bko\b|alerte/.test(c)) return "ko";
+  if (/\bok\b/.test(c))        return "ok";
+  if (/attente/.test(c))        return "attente";
+  return /(…|\.\.\.)\s*$/.test(String(html || "").replace(/<[^>]+>/g, "").trim())
+    ? "encours" : "info";
+}
+function bandeauDisponible(){ return typeof bandeauEDL === "function"; }
+
+/* v3.5 — DEUX SORTES DE MESSAGES.
+   montrer() : l'etat du formulaire — le resume, les bornes incoherentes. Il
+   se recalcule a chaque frappe : il reste DANS la page, en plus visible.
+   annoncer() : le resultat d'une action — envoi, lecture impossible. Il
+   passe par le bandeau fixe, qu'on ne peut pas manquer. */
 function montrer(classe, texte){
   var n = el("etat"); n.className = "encart " + classe; n.innerHTML = texte;
+}
+function annoncer(classe, texte){
+  if (bandeauDisponible()) bandeauEDL(natureDe(classe, texte), texte);
+  montrer(classe, texte);
 }
 
 /* v2.2 — TOUTES LES BORNES SONT CONTROLEES, PAS SEULEMENT LES DEUX EXTREMES.
@@ -467,14 +492,14 @@ async function envoyer(){
        journees etaient simplement completes : il n'y avait rien a
        recalculer. On dit la vraie raison. */
     var enPlace = existants ? dejaEnPlace(bornes()) : 0;
-    montrer(enPlace ? "ok" : "ko", enPlace
+    annoncer(enPlace ? "ok" : "ko", enPlace
       ? "Rien à envoyer : ces journées sont déjà complètes (" + enPlace +
         " créneau" + (enPlace > 1 ? "x" : "") + " en place)."
       : "Rien à envoyer : aucune journée ne s'ouvre avec ces réglages.");
     return;
   }
   if (calendrier.tronque){
-    montrer("ko", "Plage trop longue : corrigez le dernier jour avant d'envoyer.");
+    annoncer("ko", "Plage trop longue : corrigez le dernier jour avant d'envoyer.");
     return;
   }
   if (existants === null){
@@ -502,7 +527,7 @@ async function envoyer(){
 
   for (var i = 0; i < journees.length; i++){
     var j = journees[i];
-    montrer("", "Envoi… " + (i+1) + " / " + journees.length +
+    annoncer("", "Envoi… " + (i+1) + " / " + journees.length +
       " — " + enFrancais(j.date));
     try {
       /* v2.2 — UN DELAI SUR CHAQUE ENVOI.
@@ -547,10 +572,10 @@ async function envoyer(){
     el("etat").innerHTML = messageFin; el("etat").className = classeFin;
   }
   if (!echecs.length){
-    montrer("ok", "Terminé : <b>" + envoyes + "</b> créneaux envoyés sur " +
+    annoncer("ok", "Terminé : <b>" + envoyes + "</b> créneaux envoyés sur " +
       journees.length + " journées. Les créneaux déjà présents ont été ignorés.");
   } else {
-    montrer("ko", envoyes + " créneaux envoyés, mais " + echecs.length +
+    annoncer("ko", envoyes + " créneaux envoyés, mais " + echecs.length +
       " journée(s) en échec : " + echecs.join(", ") +
       ". Relancez l'envoi : les journées déjà passées ne seront pas dupliquées.");
   }
@@ -574,6 +599,10 @@ function lireExistants(){
 }
 
 async function lireExistantsVraiment(){
+  /* v3.5 — cette lecture n'est pas une action de l'utilisateur : elle a lieu
+     seule, a l'ouverture et apres chaque envoi. En bandeau, sa roue restait
+     affichee pour toujours une fois la lecture reussie, rien ne venant la
+     remplacer. Elle reste donc dans la page ; seul son ECHEC s'annonce. */
   montrer("", "Lecture des créneaux déjà ouverts…");
   var minuterie = new AbortController();
   var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
@@ -591,7 +620,7 @@ async function lireExistantsVraiment(){
   } catch (e){
     clearTimeout(echeance);
     existants = null;
-    montrer("ko", "Impossible de lire les créneaux déjà ouverts — " +
+    annoncer("ko", "Impossible de lire les créneaux déjà ouverts — " +
       (e && e.name === "AbortError" ? "pas de réponse après 30 secondes"
                                     : (e.message || e)) +
       ". Sans cette lecture, ouvrir risquerait de surcharger des journées " +

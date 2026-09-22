@@ -6,7 +6,7 @@
 <title>RDV EDL</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- index.html — RDV EDL v1.1 — 18/09/2026
+<!-- index.html — RDV EDL v1.3 — 21/09/2026
 
      CETTE PAGE EXISTE POUR UNE RAISON PRÉCISE.
 
@@ -40,7 +40,7 @@
 
 <header>
   <h1>RDV EDL</h1>
-  <div class="version">v1.1 — rendez-vous d'états des lieux</div>
+  <div class="version">v1.3 — rendez-vous d'états des lieux</div>
 </header>
 
 <main>
@@ -53,8 +53,13 @@
     <span class="sous">les créneaux proposés aux locataires</span></a>
 </main>
 
+<script src="bandeau-edl.js?v=1.1"></script>
 <script src="graph-auth.js?v=1.1"></script>
 <script>
+/* v1.2 — l'echec de connexion passe aussi par le bandeau. */
+function signaler(nature, texte){
+  if (typeof bandeauEDL === 'function') bandeauEDL(nature, texte);
+}
 (async function () {
   const etat = document.getElementById('etat');
   try {
@@ -74,6 +79,7 @@
         if (PAGES_CONNUES.includes(memorisee)) page = memorisee;
       } catch (e) { /* mode privé : page par défaut */ }
       etat.textContent = 'Connexion réussie, retour à la page…';
+      signaler('encours', etat.textContent);
       window.location.replace(page);
       return;
     }
@@ -82,6 +88,7 @@
       : "Non connecté — la connexion se fera à l'ouverture d'un écran.";
   } catch (e) {
     etat.textContent = 'La connexion a échoué — ' + (e.message || e);
+    signaler('ko', etat.textContent);
   }
 })();
 </script>

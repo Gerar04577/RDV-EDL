@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v2.1 — 21/09/2026
+<!-- rendez-vous.html — RDV EDL v2.3 — 21/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -84,6 +84,7 @@
   <div id="zone"></div>
 </main>
 
+<script src="bandeau-edl.js?v=1.1"></script>
 <script src="signature-edl.js?v=1.0"></script>
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
@@ -94,8 +95,30 @@ var donnees = null;    // la réponse de Make
 var reconnu = null;    // { nom, email, correction }
 
 function el(id){ return document.getElementById(id); }
+/* Traduit la classe historique d'un message en nature de bandeau. Une
+   operation en cours se reconnait a ses points de suspension. */
+function natureDe(classe, html){
+  var c = String(classe || "");
+  if (/\bko\b|alerte/.test(c)) return "ko";
+  if (/\bok\b/.test(c))        return "ok";
+  if (/attente/.test(c))        return "attente";
+  return /(…|\.\.\.)\s*$/.test(String(html || "").replace(/<[^>]+>/g, "").trim())
+    ? "encours" : "info";
+}
+function bandeauDisponible(){ return typeof bandeauEDL === "function"; }
+
+/* v2.2 — TOUT MESSAGE PASSE PAR LE BANDEAU.
+   L'encart en haut de page etait trop discret : « c'est noté à 11:00 »
+   passait inapercu. Le bandeau, fixe et en couleurs vives, prend le relais ;
+   l'encart ne sert plus que si bandeau-edl.js n'a pas pu etre charge. */
 function montrer(classe, texte){
-  var n = el("etat"); n.className = "encart " + classe; n.innerHTML = texte;
+  var n = el("etat");
+  if (bandeauDisponible()){
+    bandeauEDL(natureDe(classe, texte), texte);
+    n.className = "cache"; n.innerHTML = "";
+  } else {
+    n.className = "encart " + classe; n.innerHTML = texte;
+  }
 }
 function echapper(s){
   return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
@@ -473,8 +496,8 @@ async function reserver(cle){
   /* v1.5 — le verrou etait rendu AVANT le rafraichissement : pendant cette
      seconde requete, un clic restait possible. On le rend a la toute fin. */
   if (rep && rep.ok){
-    await rafraichirEcran("C'est noté : <b>" + enFrancais(dateDeCle(cle)) +
-      " à " + c.heure + "</b>. Vous recevrez une confirmation par courriel.");
+    await rafraichirEcran("Rendez-vous réservé : <b>" + enFrancais(dateDeCle(cle)) +
+      " à " + c.heure + "</b>.<br>Une confirmation vous est envoyée par courriel.");
   } else {
     /* le creneau a ete pris entre l'affichage et le clic : on redessine la
        liste sans lui, plutot que de laisser le locataire devant un bouton. */

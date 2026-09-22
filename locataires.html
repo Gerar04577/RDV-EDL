@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v1.7 — 21/09/2026 -->
+<!-- locataires.html — RDV EDL v1.9 — 21/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -52,13 +52,14 @@
   details.aide { margin: 10px 0; }
   details.aide summary { cursor: pointer; font-weight: 600; color: var(--fonce); }
   details.aide div { font-size: 13.5px; line-height: 1.55; padding-top: 8px; }
+  .cache { display:none; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v1.7 — lecture seule de Gestion Loyers</div>
+  <div class="version">v1.9 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
@@ -105,6 +106,7 @@
 <script src="graph-storage.js?v=1.1"></script>
 <script src="liste-edl.js?v=1.4"></script>
 <script src="signature-edl.js?v=1.0"></script>
+<script src="bandeau-edl.js?v=1.1"></script>
 <script>
 /* locataires.html — RDV EDL v1.0 — 18/09/2026
    Écran de consultation et de sélection. AUCUN ENVOI AUTOMATIQUE : la liste
@@ -114,8 +116,26 @@ const WEBHOOK_MAKE = 'https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf
 
 let lignesEDL = [];
 
+/* Traduit la classe historique d'un message en nature de bandeau. Une
+   operation en cours se reconnait a ses points de suspension. */
+function natureDe(classe, html){
+  var c = String(classe || "");
+  if (/\bko\b|alerte/.test(c)) return "ko";
+  if (/\bok\b/.test(c))        return "ok";
+  if (/attente/.test(c))        return "attente";
+  return /(…|\.\.\.)\s*$/.test(String(html || "").replace(/<[^>]+>/g, "").trim())
+    ? "encours" : "info";
+}
+function bandeauDisponible(){ return typeof bandeauEDL === "function"; }
+
+/* v1.8 — les messages de l'encart d'etat passent par le bandeau. */
 function texte(el, html, classe) {
   const n = document.getElementById(el);
+  if (el === 'etat' && bandeauDisponible()) {
+    bandeauEDL(natureDe(classe, html), html);
+    n.innerHTML = ''; n.className = 'cache';
+    return;
+  }
   n.innerHTML = html;
   n.className = classe || 'encart';
 }
@@ -158,7 +178,7 @@ async function recharger() {
 
     texte('etat',
       `Liste établie à partir de <b>${echapper(r.fichiers.rentree)}</b> et ` +
-      `<b>${echapper(r.fichiers.mois)}</b> — ${r.lignes.length} ligne(s).`);
+      `<b>${echapper(r.fichiers.mois)}</b> — ${r.lignes.length} ligne(s).`, 'encart ok');
 
     if (r.avertissements.length) {
       document.getElementById('avertissements').innerHTML =
@@ -264,7 +284,7 @@ async function mettreAJour() {
     const corps = await res.text();
     if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
     texte('etat', `Liste mise à jour dans Make : <b>${lignesEDL.length}</b> ligne(s). ` +
-      `Les locataires peuvent maintenant être reconnus.`, 'encart');
+      `Les locataires peuvent maintenant être reconnus.`, 'encart ok');
   } catch (e) {
     clearTimeout(echeance);
     texte('etat',
@@ -364,7 +384,7 @@ async function envoyer() {
     document.querySelectorAll('input[type=checkbox]:checked').forEach(c => { c.checked = false; });
     dessiner();
     texte('etat', `${choisis.length} invitation(s) envoyée(s) à ${heure}. ` +
-      `Ces lignes sont désormais marquées « invité ».`);
+      `Ces lignes sont désormais marquées « invité ».`, 'encart ok');
   } catch (e) {
     texte('etat',
       `L'envoi a échoué — ${echapper(e.message || e)}. Aucune invitation n'est ` +
