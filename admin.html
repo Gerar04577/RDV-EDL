@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v3.2 — 20/09/2026
+<!-- admin.html — RDV EDL v3.4 — 21/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -77,7 +77,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v3.2 — journées mixtes, sans écrasement</div>
+  <div class="version">v3.4 — journées mixtes, sans écrasement</div>
 </header>
 
 <main>
@@ -126,11 +126,11 @@
 <div class="plage">
   <div>
     <label for="debut">Du</label>
-    <input autocomplete="off" type="date" id="debut" value="2026-08-10">
+    <input autocomplete="off" type="date" id="debut" value="">
   </div>
   <div>
     <label for="fin">au</label>
-    <input autocomplete="off" type="date" id="fin" value="2026-09-08">
+    <input autocomplete="off" type="date" id="fin" value="">
   </div>
 </div>
 
@@ -138,15 +138,15 @@
 
 <div class="champ">
   <label for="borne1">Sorties denses jusqu'au</label>
-  <input autocomplete="off" type="date" id="borne1" value="2026-08-25">
+  <input autocomplete="off" type="date" id="borne1" value="">
 </div>
 <div class="champ">
   <label for="borne2">Sorties ralenties jusqu'au</label>
-  <input autocomplete="off" type="date" id="borne2" value="2026-08-31">
+  <input autocomplete="off" type="date" id="borne2" value="">
 </div>
 <div class="champ">
   <label for="debutEntrees">Entrées à partir du</label>
-  <input autocomplete="off" type="date" id="debutEntrees" value="2026-08-30">
+  <input autocomplete="off" type="date" id="debutEntrees" value="">
 </div>
 
 <h2>Les plafonds par journée</h2>
@@ -315,12 +315,28 @@ function composerCalendrier(b){
    reglages d'origine apres une fausse manoeuvre demandait de recharger la
    page — ce qui n'est pas evident quand on ne sait pas que les defauts y
    sont inscrits. */
-var REFERENCE = { debut:"2026-08-10", borne1:"2026-08-25", borne2:"2026-08-31",
-                  debutEntrees:"2026-08-30", fin:"2026-09-08",
+/* v3.3 — LES DATES DE REFERENCE SUIVENT LA SAISON, PAS L'ANNEE 2026.
+   Elles etaient ecrites en dur pour 2026. L'an prochain, l'ecran se serait
+   ouvert sur aout 2026, et « Revenir aux valeurs de référence » aurait
+   ramene des dates passees : cinq dates a retaper a chaque saison.
+   La saison visee est celle de l'annee en cours tant que son dernier jour,
+   le 8 septembre, n'est pas passe ; au-dela, celle de l'annee suivante. */
+function anneeDeSaison(){
+  var d = new Date();
+  var a = d.getFullYear();
+  var fin = new Date(a, 8, 8, 23, 59);   // 8 septembre, mois compte a partir de 0
+  return d > fin ? a + 1 : a;
+}
+var AN = String(anneeDeSaison());
+var REFERENCE = { debut: AN + "-08-10", borne1: AN + "-08-25", borne2: AN + "-08-31",
+                  debutEntrees: AN + "-08-30", fin: AN + "-09-08",
                   maxDense:"5", maxRalenti:"2", maxEntrees:"4" };
 
 function valeursParDefaut(){
   Object.keys(REFERENCE).forEach(function(id){ el(id).value = REFERENCE[id]; });
+  /* la reference sert de nouveau point de depart : sans cela, le prochain
+     deplacement du debut se calculerait depuis l'ancienne valeur. */
+  debutPrecedent = REFERENCE.debut;
   recalculer();
 }
 
@@ -586,7 +602,49 @@ async function lireExistantsVraiment(){
   }
 }
 
-["debut","fin","borne1","borne2","debutEntrees","maxDense","maxRalenti","maxEntrees"]
+/* v3.4 — LES BORNES SUIVENT LE DEBUT DE LA PLAGE.
+
+   Deplacer le debut de la plage laissait les trois bornes interieures a leur
+   place. Une plage mise au 1er octobre gardait ses bornes en aout : aucune
+   sortie ne s'ouvrait, et rien ne disait pourquoi. C'est ce qui s'est
+   produit le 20/09.
+
+   Desormais, quand le debut bouge de N jours, les trois bornes bougent de
+   N jours : la forme de la saison est conservee, le calendrier se deplace
+   d'un bloc. Et aucune borne ne peut se retrouver avant le debut.
+   La fin de la plage, elle, reste ce que vous avez saisi : on la fixe
+   souvent en second, et la deplacer d'office effacerait votre choix. */
+var BORNES_INTERIEURES = ["borne1", "borne2", "debutEntrees"];
+var debutPrecedent = null;
+
+function decalerJours(iso, n){
+  var d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function dateValide(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(iso || ""); }
+
+function glisserBornes(){
+  var nouveau = el("debut").value;
+  if (!dateValide(nouveau)) return;          // saisie en cours : on attend
+  if (dateValide(debutPrecedent) && nouveau !== debutPrecedent){
+    var ecart = Math.round((new Date(nouveau + "T12:00:00") -
+                            new Date(debutPrecedent + "T12:00:00")) / 86400000);
+    BORNES_INTERIEURES.forEach(function(id){
+      if (dateValide(el(id).value)) el(id).value = decalerJours(el(id).value, ecart);
+    });
+  }
+  BORNES_INTERIEURES.forEach(function(id){
+    if (dateValide(el(id).value) && el(id).value < nouveau) el(id).value = nouveau;
+  });
+  debutPrecedent = nouveau;
+}
+
+function surDebut(){ glisserBornes(); recalculer(); }
+el("debut").addEventListener("change", surDebut);
+el("debut").addEventListener("input", surDebut);
+
+["fin","borne1","borne2","debutEntrees","maxDense","maxRalenti","maxEntrees"]
   .forEach(function(id){
     el(id).addEventListener("change", recalculer);
     el(id).addEventListener("input", recalculer);

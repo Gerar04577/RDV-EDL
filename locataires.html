@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v1.6 — 21/09/2026 -->
+<!-- locataires.html — RDV EDL v1.7 — 21/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -58,10 +58,19 @@
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v1.6 — lecture seule de Gestion Loyers</div>
+  <div class="version">v1.7 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
+  <!-- v1.7 — on arrivait ici depuis l'accueil ou l'ecran d'ouverture, sans
+       aucun moyen d'en repartir autrement qu'en retapant une adresse. -->
+  <div class="encart" style="display:flex; gap:8px; padding:8px">
+    <a href="index.html" style="flex:1; text-align:center; text-decoration:none;
+       color:var(--fonce); font-weight:600; padding:6px">Accueil</a>
+    <a href="admin.html" style="flex:1; text-align:center; text-decoration:none;
+       color:var(--fonce); font-weight:600; padding:6px">Ouvrir des journées</a>
+  </div>
+
   <details class="aide">
     <summary>Mode d'emploi</summary>
     <div>
