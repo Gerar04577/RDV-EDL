@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v4.3 — 22/09/2026
+<!-- admin.html — RDV EDL v5.1 — 22/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -72,6 +72,23 @@
   td .ajout { color:#14532D; font-weight:700; font-size:13px; }
   td .complet { color:#6B7280; font-style:italic; font-size:12.5px; }
   .legende { font-size:12.5px; color:#4B5563; margin:4px 0 6px; }
+  /* v5.0 — l'agenda */
+  .jourAg { margin:10px 0 4px; font-size:13px; font-weight:800; color:var(--fonce);
+            text-transform:uppercase; letter-spacing:.3px; }
+  .rdv { display:flex; align-items:center; gap:10px; background:#fff;
+         border:1px solid var(--bord); border-left-width:6px; border-radius:9px;
+         padding:9px 11px; margin:5px 0; }
+  .rdv.s { border-left-color:var(--sortie); }
+  .rdv.e { border-left-color:var(--entree); }
+  .rdv.libre { border-left-color:#D1D5DB; background:#FAFAFA; }
+  .rdv .h { font-weight:800; font-size:15.5px; min-width:52px; }
+  .rdv .qui { flex:1; font-size:14px; line-height:1.35; }
+  .rdv .qui b { color:var(--fonce); }
+  .rdv .qui span { color:#6B7280; font-size:12.5px; }
+  .rdv .libreTxt { flex:1; color:#6B7280; font-style:italic; font-size:13.5px; }
+  .rdv button { background:#fff; color:var(--rouge); border:1.5px solid var(--rouge);
+                border-radius:8px; padding:7px 11px; font-size:13px; font-weight:700;
+                cursor:pointer; }
   details summary { cursor:pointer; font-weight:600; color:var(--fonce); }
   details div { font-size:13.5px; line-height:1.6; padding-top:8px; }
   .barre { position:fixed; left:0; right:0; bottom:0; background:#fff;
@@ -86,7 +103,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v4.3 — journées mixtes, sans écrasement</div>
+  <div class="version">v5.1 — agenda des rendez-vous</div>
 </header>
 
 <main>
@@ -187,15 +204,20 @@
 <h2>Calendrier proposé</h2>
 <div id="calendrier"></div>
 
+<!-- v5.0 — L'AGENDA : ce qui est pris, ce qui reste libre. -->
+<h2>Agenda de la plage</h2>
+<div id="agenda"></div>
+
 </main>
 
 <div class="barre">
   <div class="compte" id="compte">—</div>
-  <button class="bouton clair" style="flex:0 0 auto" onclick="existants = null; recalculer()">Recalculer</button>
+  <button class="bouton clair" style="flex:0 0 auto" onclick="existants = null; rendezvous = null; recalculer()">Recalculer</button>
   <button class="bouton" id="envoyer" onclick="envoyer()">Envoyer</button>
 </div>
 
 <script src="bandeau-edl.js?v=1.2"></script>
+<script src="signature-edl.js?v=1.0"></script>
 <script>
 var WEBHOOK = "https://hook.eu1.make.com/5tlvtxkyr8e2ake2knph6iv6nvrobvvf";
 
@@ -242,6 +264,28 @@ function expliquerErreur(e){
    « 5 créneaux envoyés sur 1 journées », « 1 journée(s) en échec » : la
    forme figee ou a parentheses est fausse une fois sur deux. */
 function pl(n, un, plusieurs){ return n + " " + (n > 1 ? plusieurs : un); }
+/* v5.1 — UNE MINUTERIE QUI NE VOYAGE PAS AVEC LA REQUETE.
+
+   Le delai de trente secondes reposait sur un AbortController, dont le
+   « signal » etait joint aux options de la requete. Certains navigateurs
+   font passer les requetes par un relais qui doit recopier ces options, et
+   cet objet-la ne se recopie pas : « AbortSignal object could not be
+   cloned ». Plus rien ne fonctionnait. Constate le 22/09 chez Gerard.
+
+   La minuterie est desormais une simple course entre la reponse et un
+   compte a rebours : aucun objet n'accompagne la requete. La requete n'est
+   plus reellement interrompue, mais sa reponse tardive est ignoree. */
+function avecDelai(promesse, secondes){
+  var minuteur;
+  var rebours = new Promise(function(_, rejeter){
+    minuteur = setTimeout(function(){
+      var x = new Error("délai dépassé"); x.name = "AbortError"; rejeter(x);
+    }, (secondes || 30) * 1000);
+  });
+  return Promise.race([promesse, rebours]).then(
+    function(v){ clearTimeout(minuteur); return v; },
+    function(e){ clearTimeout(minuteur); throw e; });
+}
 function minutes(h){ return Number(h.slice(0,2)) * 60 + Number(h.slice(3,5)); }
 
 /* Le type est inscrit a la fin de la cle : « 2026-10-01_09h00_EDLS ». */
@@ -511,10 +555,153 @@ function dessinerCalendrier(b){
     "<th>Contenu</th><th>Heures</th></tr>" + lignes + "</table></div>";
 }
 
+
+/* ===================== v5.0 — L'AGENDA DE LA PLAGE =======================
+   Gerard voyait le nombre de creneaux, jamais QUI avait reserve quoi. Cette
+   section liste, journee par journee, chaque creneau de la plage : pris —
+   avec le studio, le locataire, son adresse et un bouton pour annuler — ou
+   libre, en gris.
+   Les creneaux viennent de « tousCreneaux », deja lu ; les rendez-vous de la
+   nouvelle route « agenda ». Les deux se rejoignent par la cle du creneau. */
+var rendezvous = null;   // liste des rendez-vous, ou null si pas encore lue
+
+/* v5.1 — une seule lecture a la fois, comme pour les creneaux : au
+   chargement, deux recalculs se declenchent coup sur coup et lancaient deux
+   lectures de la route « agenda ». */
+var lectureRdvEnCours = null;
+
+function lireRendezvous(){
+  if (lectureRdvEnCours) return lectureRdvEnCours;
+  lectureRdvEnCours = lireRendezvousVraiment().then(function(r){
+    lectureRdvEnCours = null; return r; });
+  return lectureRdvEnCours;
+}
+
+async function lireRendezvousVraiment(){
+  try {
+    var res = await avecDelai(fetch(WEBHOOK, { method:"POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ action: "agenda" }) }), 30);
+    var texte = await res.text();
+    if (!res.ok) throw new Error("Make a répondu " + res.status);
+    rendezvous = enListe(JSON.parse(texte).rendezvous)
+      .filter(function(r){ return r && r.cle; });
+    return true;
+  } catch (e){
+    rendezvous = null;
+    annoncer("ko", "Les rendez-vous pris n'ont pas pu être lus — " +
+      expliquerErreur(e) + ". L'agenda reste vide ; le reste de l'écran " +
+      "fonctionne normalement.");
+    return false;
+  }
+}
+
+function dessinerAgenda(b){
+  var zone = el("agenda");
+  if (rendezvous === null || existants === null){ zone.innerHTML = ""; return; }
+
+  var parCle = {};
+  rendezvous.forEach(function(r){ parCle[r.cle] = r; });
+
+  var parJour = {};
+  enListe(existants).forEach(function(c){
+    var d = dateDeCle(c.cle);
+    if (d < b.debut || d > b.fin) return;
+    (parJour[d] = parJour[d] || []).push(c);
+  });
+  var jours = Object.keys(parJour).sort();
+  if (!jours.length){
+    zone.innerHTML = '<div class="encart">Aucun créneau ouvert sur cette plage.</div>';
+    return;
+  }
+
+  var pris = 0;
+  var html = jours.map(function(d){
+    var lignes = parJour[d]
+      .sort(function(a, c){ return a.heure < c.heure ? -1 : a.heure > c.heure ? 1 : 0; })
+      .map(function(c){
+        var r = parCle[c.cle];
+        var t = typeDeCle(c.cle);
+        var nature = t === "EDLS" ? "sortie" : t === "EDLE" ? "entrée" : "?";
+        if (!r){
+          return '<div class="rdv libre"><div class="h">' + echapperHTML(c.heure) +
+            '</div><div class="libreTxt">' + nature + " — libre</div></div>";
+        }
+        pris++;
+        return '<div class="rdv ' + (t === "EDLS" ? "s" : "e") + '">' +
+          '<div class="h">' + echapperHTML(c.heure) + "</div>" +
+          '<div class="qui"><b>' + echapperHTML(r.studio || r.uniteId || "") + "</b> · " +
+          nature + "<br>" + echapperHTML(r.locataire || "") +
+          "<br><span>" + echapperHTML(r.email || "") + "</span></div>" +
+          '<button onclick="annulerRendezvous(&#39;' + echapperHTML(c.cle) +
+          '&#39;)">Annuler</button></div>';
+      }).join("");
+    return '<div class="jourAg">' + enFrancais(d) + "</div>" + lignes;
+  }).join("");
+
+  zone.innerHTML = '<div class="encart" style="padding:6px 10px 12px">' +
+    '<div class="legende">' + pl(pris, "rendez-vous pris", "rendez-vous pris") +
+    " sur " + pl(jours.reduce(function(n, d){ return n + parJour[d].length; }, 0),
+                 "créneau ouvert", "créneaux ouverts") + "</div>" + html + "</div>";
+}
+
+/* Annulation par Gerard : le locataire en est prevenu par courriel, sans
+   quoi il croirait son rendez-vous maintenu et se presenterait pour rien. */
+async function annulerRendezvous(cle){
+  var r = (rendezvous || []).filter(function(x){ return x.cle === cle; })[0];
+  if (!r) return;
+  var quand = enFrancais(dateDeCle(cle)) + " à " + String(cle).slice(11, 16).replace("h", ":");
+  if (!confirm("Annuler le rendez-vous de " + (r.locataire || "") + " — " +
+               (r.studio || "") + " — " + quand + " ?\n\n" +
+               "Le locataire en sera prévenu par courriel.")) return;
+
+  var nature = r.type === "EDLS" ? "de sortie" : "d'entrée";
+  var lien = location.origin + location.pathname.replace(/[^/]*$/, "") +
+             "rendez-vous.html#" + r.uniteId + "-" +
+             (r.type === "EDLS" ? "sortie" : "entree");
+  var corps = "Madame, Monsieur,\n\n" +
+    "Le rendez-vous pour l'état des lieux " + nature + " de votre logement " +
+    (r.studio || "") + ", prévu le " + quand + ", a dû être annulé.\n\n" +
+    "Nous vous invitons à choisir une nouvelle date en suivant ce lien :\n\n" +
+    lien + "\n\n" +
+    "Les créneaux se réservent au fur et à mesure : nous vous invitons à " +
+    "faire votre choix sans tarder.\n\n" +
+    "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
+    "distinguées.\n\n" + signer(r.uniteId);
+
+  annoncer("", "Annulation…");
+  try {
+    var res = await fetch(WEBHOOK, { method:"POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ action:"annuler", uniteId: r.uniteId, type: r.type,
+        nom: r.locataire, email: r.email,
+        objet_courriel: "Annulation — état des lieux " + nature + " — " + (r.studio || ""),
+        corps_courriel: corps }) });
+    var rep = JSON.parse(await res.text());
+    if (!res.ok || !rep.ok || !rep.annule) throw new Error(rep && rep.message || "annulation refusée");
+  } catch (e){
+    annoncer("ko", "L'annulation a échoué — " + expliquerErreur(e) +
+      ". Le rendez-vous est maintenu.");
+    return;
+  }
+  rendezvous = null;
+  await lireRendezvous();
+  dessinerAgenda(bornes());
+  annoncer("ok", "Rendez-vous annulé. Le locataire en a été prévenu par courriel.");
+}
+
+/* la signature depend de l'immeuble ; si le fichier manque, on signe par defaut */
+function signer(uniteId){
+  try { if (typeof signatureEDL === "function") return signatureEDL(uniteId); }
+  catch (e) { /* signature par defaut */ }
+  return "Jean-Marc Gérard";
+}
+
 async function recalculer(){
   if (existants === null){
     if (!(await lireExistants())) return;
   }
+  if (rendezvous === null) await lireRendezvous();   // v5.0 — pour l'agenda
   var b = bornes();
   var souci = verifierBornes(b);
   if (souci){
@@ -534,6 +721,7 @@ async function recalculer(){
       el("compte").textContent = "0 à ajouter · " + enPlace + " déjà en place";
       calendrier = { jours: [] };
       dessinerCalendrier(b);
+      dessinerAgenda(b);
       return;
     } else {
       montrer("ko", "Aucune journée ne s'ouvre avec ces bornes : " +
@@ -564,6 +752,7 @@ async function recalculer(){
   }
 
   dessinerCalendrier(b);
+  dessinerAgenda(b);
 
   var total = calendrier.placesEDLS + calendrier.placesEDLE;
   /* v3.1 — l'existant se compte sur TOUTE la plage. Additionne journee par
@@ -625,11 +814,8 @@ async function envoyer(){
          Sans lui, une requete restee en suspens bloquait la page pour
          toujours, champs verrouilles, sans moyen d'en sortir. Trente
          secondes suffisent largement pour cinq creneaux. */
-      var minuterie = new AbortController();
-      var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
-      var res = await fetch(WEBHOOK, {
+      var res = await avecDelai(fetch(WEBHOOK, {
         method: "POST",
-        signal: minuterie.signal,
         headers: { "Content-Type": "application/json" },
         /* Le type de tete n'est pas lu par le scenario — chaque creneau
            porte le sien. Sur une journee mixte, annoncer un seul type
@@ -638,12 +824,10 @@ async function envoyer(){
                                type: (j.edls && j.edle) ? "mixte"
                                      : (j.edls ? "EDLS" : "EDLE"),
                                creneaux: j.creneaux })
-      });
-      clearTimeout(echeance);
+      }), 30);
       if (res.ok) envoyes += j.creneaux.length;
       else echecs.push(j.date + " (" + res.status + ")");
     } catch (e){
-      clearTimeout(echeance);
       echecs.push(j.date + " (" + expliquerErreur(e) + ")");
     }
   }
@@ -656,7 +840,7 @@ async function envoyer(){
      lieu. On relit ce qui est desormais en place, et on redessine — en
      gardant le message de fin d'envoi, que le recalcul effacerait. */
   var messageFin = el("etat").innerHTML, classeFin = el("etat").className;
-  existants = null;
+  existants = null; rendezvous = null;   // v5.0 — l'agenda suit
   await recalculer();
   if (existants !== null){
     el("etat").innerHTML = messageFin; el("etat").className = classeFin;
@@ -695,13 +879,10 @@ async function lireExistantsVraiment(){
      affichee pour toujours une fois la lecture reussie, rien ne venant la
      remplacer. Elle reste donc dans la page ; seul son ECHEC s'annonce. */
   montrer("", "Lecture des créneaux déjà ouverts…");
-  var minuterie = new AbortController();
-  var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
   try {
-    var res = await fetch(WEBHOOK, { method:"POST", signal: minuterie.signal,
+    var res = await avecDelai(fetch(WEBHOOK, { method:"POST",
       headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ action: "tousCreneaux" }) });
-    clearTimeout(echeance);
+      body: JSON.stringify({ action: "tousCreneaux" }) }), 30);
     var texte = await res.text();
     if (!res.ok) throw new Error("Make a répondu " + res.status);
     var rep = JSON.parse(texte);
@@ -709,7 +890,6 @@ async function lireExistantsVraiment(){
       return c && c.cle && c.heure; });
     return true;
   } catch (e){
-    clearTimeout(echeance);
     existants = null;
     annoncer("ko", "Impossible de lire les créneaux déjà ouverts — " +
       expliquerErreur(e) +

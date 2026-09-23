@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rendez-vous — état des lieux</title>
 <meta name="theme-color" content="#F0997B">
-<!-- rendez-vous.html — RDV EDL v2.7 — 22/09/2026
+<!-- rendez-vous.html — RDV EDL v2.8 — 22/09/2026
 
      L'ECRAN DU LOCATAIRE. C'est la seule page que voient les locataires ;
      elle s'ouvre par un lien de la forme :
@@ -295,14 +295,29 @@ function expliquerErreur(e){
     return "pas de connexion Internet — vérifiez votre réseau";
   return m;
 }
+/* v2.8 — UNE MINUTERIE QUI NE VOYAGE PAS AVEC LA REQUETE.
+   Le delai reposait sur un AbortController, dont le « signal » etait joint
+   aux options de la requete. Certains navigateurs font passer les requetes
+   par un relais qui doit recopier ces options, et cet objet-la ne se recopie
+   pas : « AbortSignal object could not be cloned ». Plus rien ne
+   fonctionnait. La minuterie est desormais une course entre la reponse et un
+   compte a rebours : aucun objet n'accompagne la requete. */
+function avecDelai(promesse, secondes){
+  var minuteur;
+  var rebours = new Promise(function(_, rejeter){
+    minuteur = setTimeout(function(){
+      var x = new Error("délai dépassé"); x.name = "AbortError"; rejeter(x);
+    }, (secondes || 30) * 1000);
+  });
+  return Promise.race([promesse, rebours]).then(
+    function(v){ clearTimeout(minuteur); return v; },
+    function(e){ clearTimeout(minuteur); throw e; });
+}
 async function appeler(corps){
-  var minuterie = new AbortController();
-  var echeance = setTimeout(function(){ minuterie.abort(); }, 30000);
   try {
-    var res = await fetch(WEBHOOK, { method:"POST", signal: minuterie.signal,
+    var res = await avecDelai(fetch(WEBHOOK, { method:"POST",
       headers: { "Content-Type":"application/json" },
-      body: JSON.stringify(corps) });
-    clearTimeout(echeance);
+      body: JSON.stringify(corps) }), 30);
     var texte = await res.text();
     if (!res.ok) throw new Error("le serveur a répondu " + res.status +
       (texte ? " — " + texte.slice(0, 120) : ""));
@@ -329,7 +344,6 @@ async function appeler(corps){
         (brut ? " : « " + brut.slice(0, 120) + " »" : " (réponse vide)"));
     }
   } catch (e){
-    clearTimeout(echeance);
     throw new Error(expliquerErreur(e));
   }
 }

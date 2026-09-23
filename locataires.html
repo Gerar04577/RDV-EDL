@@ -6,7 +6,7 @@
 <title>RDV EDL — Locataires</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- locataires.html — RDV EDL v2.2 — 22/09/2026 -->
+<!-- locataires.html — RDV EDL v2.3 — 22/09/2026 -->
 <style>
   :root {
     --corail: #F0997B; --fonce: #4A1B0C; --fond: #FAF6F4;
@@ -59,7 +59,7 @@
 
 <header>
   <h1>RDV EDL — Locataires à inviter</h1>
-  <div class="version">v2.2 — lecture seule de Gestion Loyers</div>
+  <div class="version">v2.3 — lecture seule de Gestion Loyers</div>
 </header>
 
 <main>
@@ -272,21 +272,17 @@ async function mettreAJour() {
   btn.disabled = true;
   texte('etat', `Mise à jour de ${lignesEDL.length} lignes…`);
 
-  const minuterie = new AbortController();
-  const echeance = setTimeout(() => minuterie.abort(), 30000);
   try {
-    const res = await fetch(WEBHOOK_MAKE, {
-      method: 'POST', signal: minuterie.signal,
+    const res = await avecDelai(fetch(WEBHOOK_MAKE, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'rafraichir', locataires: lignesEDL }),
-    });
-    clearTimeout(echeance);
+    }), 30);
     const corps = await res.text();
     if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
     texte('etat', `Liste mise à jour dans Make : <b>${pl(lignesEDL.length, 'ligne', 'lignes')}</b>. ` +
       `Les locataires peuvent maintenant être reconnus.`, 'encart ok');
   } catch (e) {
-    clearTimeout(echeance);
     texte('etat',
       `La mise à jour a échoué — ${echapper(
         expliquerErreur(e))}. ` +
@@ -330,6 +326,24 @@ function expliquerErreur(e){
    « 1 invitation(s) envoyée(s) », « 1 journée(s) en échec » : la forme a
    parentheses est lisible, mais maladroite, et fausse une fois sur deux. */
 function pl(n, un, plusieurs){ return n + " " + (n > 1 ? plusieurs : un); }
+/* v2.3 — UNE MINUTERIE QUI NE VOYAGE PAS AVEC LA REQUETE.
+   Le delai reposait sur un AbortController, dont le « signal » etait joint
+   aux options de la requete. Certains navigateurs font passer les requetes
+   par un relais qui doit recopier ces options, et cet objet-la ne se recopie
+   pas : « AbortSignal object could not be cloned ». Plus rien ne
+   fonctionnait. La minuterie est desormais une course entre la reponse et un
+   compte a rebours : aucun objet n'accompagne la requete. */
+function avecDelai(promesse, secondes){
+  var minuteur;
+  var rebours = new Promise(function(_, rejeter){
+    minuteur = setTimeout(function(){
+      var x = new Error("délai dépassé"); x.name = "AbortError"; rejeter(x);
+    }, (secondes || 30) * 1000);
+  });
+  return Promise.race([promesse, rebours]).then(
+    function(v){ clearTimeout(minuteur); return v; },
+    function(e){ clearTimeout(minuteur); throw e; });
+}
 function composerInvitation(l) {
   var nature = l.type === 'EDLS' ? 'de sortie' : "d'entrée";
   /* v1.5 — un studio vide donnait « État des lieux — » et « votre logement
@@ -384,7 +398,9 @@ async function envoyer() {
   texte('etat', `Envoi de ${pl(choisis.length, 'invitation', 'invitations')}…`);
 
   try {
-    const res = await fetch(WEBHOOK_MAKE, {
+    /* v2.3 — l'envoi des invitations n'avait aucune minuterie : si Make ne
+       repondait jamais, la page attendait indefiniment. */
+    const res = await avecDelai(fetch(WEBHOOK_MAKE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'inviter',
@@ -392,7 +408,7 @@ async function envoyer() {
           var c = composerInvitation(x);
           return Object.assign({}, x, { objet_courriel: c.objet, corps_courriel: c.corps });
         }) }),
-    });
+    }), 30);
     const corps = await res.text();
     if (!res.ok) throw new Error(`Make a répondu ${res.status} — ${corps}`);
     const heure = new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
