@@ -6,7 +6,7 @@
 <title>RDV EDL</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- index.html — RDV EDL v1.7 — 22/09/2026
+<!-- index.html — RDV EDL v1.8 — 22/09/2026
 
      CETTE PAGE EXISTE POUR UNE RAISON PRÉCISE.
 
@@ -35,8 +35,20 @@
   a.bouton .sous { display: block; font-size: 12.5px; font-weight: 400;
                    opacity: .85; margin-top: 3px; }
   /* v1.7 — le mode d'emploi */
-  .emploi { background: #fff; border: 1px solid var(--bord); border-radius: 12px;
-            padding: 4px 16px 16px; margin: 22px 0 10px; }
+  /* v1.8 — le mode d'emploi se deplie par son propre bouton : il est long,
+     et l'accueil doit rester une page de boutons. */
+  details.emploi { background: #fff; border: 1px solid var(--bord);
+                   border-radius: 12px; margin: 22px 0 10px; }
+  details.emploi > summary { list-style: none; cursor: pointer;
+     display: block; text-align: center; padding: 15px; border-radius: 11px;
+     background: #fff; color: var(--fonce); border: 2px solid var(--fonce);
+     font-size: 16px; font-weight: 600; }
+  details.emploi > summary::-webkit-details-marker { display: none; }
+  details.emploi > summary .sous { display: block; font-size: 12.5px;
+     font-weight: 400; opacity: .8; margin-top: 3px; }
+  details.emploi[open] > summary { border-radius: 11px 11px 0 0;
+     background: var(--fonce); color: #fff; }
+  details.emploi > div { padding: 4px 16px 16px; }
   .emploi h2 { font-size: 17px; color: var(--fonce); margin: 18px 0 6px;
                border-bottom: 2px solid var(--corail); padding-bottom: 5px; }
   .emploi h3 { font-size: 15px; color: var(--fonce); margin: 16px 0 4px; }
@@ -52,7 +64,7 @@
 
 <header>
   <h1>RDV EDL</h1>
-  <div class="version">v1.7 — rendez-vous d'états des lieux</div>
+  <div class="version">v1.8 — rendez-vous d'états des lieux</div>
 </header>
 
 <main>
@@ -72,8 +84,10 @@
   <!-- v1.7 — MODE D'EMPLOI, pour quelqu'un qui n'a pas suivi la
        construction : l'ordre des gestes, ce que fait chaque ecran, et quoi
        faire quand cela coince. Demande de Gerard le 22/09, pour Julien. -->
-  <section class="emploi">
-    <h2>Mode d'emploi</h2>
+  <details class="emploi">
+    <summary>Mode d'emploi
+      <span class="sous">à lire une fois — tout y est expliqué</span></summary>
+    <div>
 
     <p>Cette application sert à fixer les rendez-vous d'états des lieux. Les
     locataires choisissent eux-mêmes leur date parmi les créneaux ouverts ;
@@ -160,7 +174,8 @@
     <div class="att">Si un message parle de Make ou d'un scénario, c'est le
     moteur d'envoi qui est en cause : <b>prévenir Jean-Marc</b> plutôt que de
     recommencer plusieurs fois.</div>
-  </section>
+    </div>
+  </details>
 </main>
 
 <script src="bandeau-edl.js?v=1.2"></script>
