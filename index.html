@@ -6,7 +6,7 @@
 <title>RDV EDL</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- index.html — RDV EDL v1.8 — 22/09/2026
+<!-- index.html — RDV EDL v1.9 — 22/09/2026
 
      CETTE PAGE EXISTE POUR UNE RAISON PRÉCISE.
 
@@ -64,7 +64,7 @@
 
 <header>
   <h1>RDV EDL</h1>
-  <div class="version">v1.8 — rendez-vous d'états des lieux</div>
+  <div class="version">v1.9 — rendez-vous d'états des lieux</div>
 </header>
 
 <main>
@@ -142,8 +142,41 @@
     <p>Écran <b>Agenda des rendez-vous</b>. Il montre, pour la plage choisie en
     haut de l'écran, chaque créneau : pris — avec le studio, le locataire et son
     adresse — ou libre, en gris.</p>
-    <p>Le bouton <b>Annuler</b> supprime un rendez-vous et prévient le locataire
-    par courriel, en lui donnant le lien pour en choisir un autre.</p>
+    <p>Trois actions y sont possibles. Chacune prévient le locataire par
+    courriel, et une seule fois.</p>
+
+    <h3>Annuler</h3>
+    <p>Sur un rendez-vous pris. Il est supprimé, le créneau redevient libre, et
+    le locataire reçoit un courriel avec le lien pour en choisir un autre.</p>
+
+    <h3>Déplacer</h3>
+    <p>Sur un rendez-vous pris, à côté d'Annuler. La page propose les créneaux
+    libres de la plage ; un appui suffit. Le studio ne change pas, seules la
+    date et l'heure. Le locataire reçoit <b>un seul</b> courriel : « votre
+    rendez-vous a été déplacé au… ».</p>
+    <div class="att">Si le créneau visé vient d'être pris par quelqu'un
+    d'autre, le rendez-vous est <b>remis à sa place</b> tout seul, et un
+    message rouge le dit. Le locataire, lui, n'a rien reçu.</div>
+
+    <h3>Forcer un rendez-vous</h3>
+    <p>Bouton en tête de l'agenda, pour inscrire un rendez-vous à la place
+    d'un locataire — au téléphone, sur place, ou quand il ne répond pas.</p>
+    <ol>
+      <li>Choisir le locataire. Seuls ceux qui n'ont pas encore de rendez-vous
+      de ce type sont proposés.</li>
+      <li>Choisir un créneau libre. Un locataire qui sort ne se voit proposer
+      que des créneaux de sortie.</li>
+      <li>Vérifier le <b>délai</b> : six jours par défaut entre la sortie et
+      l'entrée d'un même studio. <b>Il peut être abaissé</b> quand les
+      circonstances l'exigent.</li>
+    </ol>
+    <p>Le nom et l'adresse sont remplis par l'application. Avant d'inscrire,
+    une question récapitule tout, et avertit si le délai n'est pas tenu — ou si
+    la sortie tomberait après l'entrée du locataire suivant. Rien n'est
+    empêché : c'est vous qui décidez, sur place.</p>
+    <div class="att">L'agenda ne montre que la <b>plage choisie en haut de
+    l'écran</b>. Un rendez-vous introuvable s'y trouve peut-être en dehors :
+    élargissez les dates.</div>
 
     <h2>Ce que voit le locataire</h2>
     <ol>
