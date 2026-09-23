@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v5.2 — 22/09/2026
+<!-- admin.html — RDV EDL v5.3 — 22/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -103,7 +103,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v5.2 — périodes toujours dans la plage</div>
+  <div class="version">v5.3 — périodes toujours dans la plage</div>
 </header>
 
 <main>
@@ -205,8 +205,8 @@
 <div id="calendrier"></div>
 
 <!-- v5.0 — L'AGENDA : ce qui est pris, ce qui reste libre. -->
-<h2>Agenda de la plage</h2>
-<div id="agenda"></div>
+<h2 id="agenda">Agenda de la plage</h2>
+<div id="listeAgenda"></div>
 
 </main>
 
@@ -598,7 +598,7 @@ async function lireRendezvousVraiment(){
 }
 
 function dessinerAgenda(b){
-  var zone = el("agenda");
+  var zone = el("listeAgenda");
   if (rendezvous === null || existants === null){ zone.innerHTML = ""; return; }
 
   var parCle = {};

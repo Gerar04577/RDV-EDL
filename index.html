@@ -6,7 +6,7 @@
 <title>RDV EDL</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- index.html — RDV EDL v1.5 — 22/09/2026
+<!-- index.html — RDV EDL v1.6 — 22/09/2026
 
      CETTE PAGE EXISTE POUR UNE RAISON PRÉCISE.
 
@@ -40,7 +40,7 @@
 
 <header>
   <h1>RDV EDL</h1>
-  <div class="version">v1.5 — rendez-vous d'états des lieux</div>
+  <div class="version">v1.6 — rendez-vous d'états des lieux</div>
 </header>
 
 <main>
@@ -51,6 +51,11 @@
 
   <a class="bouton" href="admin.html">Ouvrir des journées
     <span class="sous">les créneaux proposés aux locataires</span></a>
+
+  <!-- v1.6 — l'agenda vit dans l'écran d'ouverture ; ce bouton y mène
+       directement, a la section, sans avoir a faire defiler. -->
+  <a class="bouton" href="admin.html#agenda">Agenda des rendez-vous
+    <span class="sous">qui a réservé quoi, et ce qui reste libre</span></a>
 </main>
 
 <script src="bandeau-edl.js?v=1.2"></script>
@@ -96,7 +101,14 @@ function signaler(nature, texte){
       window.location.replace(page);
       return;
     }
-    etat.textContent = estConnecte()
+    /* v1.6 — « CONNECTE » NE VOULAIT RIEN DIRE.
+       estConnecte() se contente de constater qu'un jeton existe dans la
+       memoire du navigateur, sans regarder s'il est encore valable : un
+       jeton perime depuis des semaines affichait « Connecté à OneDrive ».
+       obtenirJetonValide() verifie l'echeance et renouvelle au besoin ;
+       c'est la seule reponse qui ait un sens. */
+    var jeton = await obtenirJetonValide();
+    etat.textContent = jeton
       ? 'Connecté à OneDrive.'
       : "Non connecté — la connexion se fera à l'ouverture d'un écran.";
   } catch (e) {
