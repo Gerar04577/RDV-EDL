@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v5.1 — 22/09/2026
+<!-- admin.html — RDV EDL v5.2 — 22/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -103,7 +103,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v5.1 — agenda des rendez-vous</div>
+  <div class="version">v5.2 — périodes toujours dans la plage</div>
 </header>
 
 <main>
@@ -421,6 +421,7 @@ var REFERENCE = { debut: AN + "-08-10", borne1: AN + "-08-25", borne2: AN + "-08
 
 function valeursParDefaut(){
   Object.keys(REFERENCE).forEach(function(id){ el(id).value = REFERENCE[id]; });
+  plagePrecedente = { debut: REFERENCE.debut, fin: REFERENCE.fin };
   recalculer();
 }
 
@@ -901,43 +902,74 @@ async function lireExistantsVraiment(){
   }
 }
 
-/* v3.7 — LES BORNES SONT DES DATES FIXES DE LA SAISON.
+/* v5.2 — LES TROIS PERIODES DECOUPENT LA PLAGE, ET Y RESTENT.
 
-   La v3.4 les faisait glisser avec le debut de la plage. C'etait une faute
-   de conception : le 25 aout, le 31 aout, le 30 aout sont lies aux baux et
-   aux loyers, ils ne dependent pas de la plage que l'on ouvre. Ouvrir « du
-   1er au 8 septembre » les poussait apres la fin de la plage, et la periode
-   des entrees devenait une periode de sorties denses. Constate le 22/09.
+   L'ecran le dit depuis le debut — « Les périodes, à l'intérieur de la
+   plage » — et le code ne l'appliquait pas. La v3.4 faisait glisser les
+   bornes du meme nombre de jours que le debut : ouvrir du 1er au 8 septembre
+   les poussait au 16, 22 et 21 septembre, APRES la fin de la plage, et plus
+   une seule entree n'etait proposee. La v3.7 les avait figees : une plage
+   ouverte en dehors de la saison n'avait plus que des entrees.
 
-   Elles ne bougent donc plus. Seule exception : si la plage passe a une
-   AUTRE ANNEE, elles suivent cette annee en gardant leur jour et leur mois —
-   sans quoi ouvrir la saison suivante laisserait les bornes un an en
-   arriere. */
+   Les bornes gardent desormais leurs PROPORTIONS dans la plage. La plage de
+   reference dure trente jours, les bornes tombent aux 16e, 22e et 21e jours ;
+   sur une plage de huit jours, elles tombent aux memes proportions. Aucune ne
+   peut sortir de la plage, et leur ordre est tenu : denses avant ralenties.
+
+   Les proportions se lisent sur la plage PRECEDENTE, pas sur la reference :
+   si vous deplacez une borne a la main, votre choix est conserve quand vous
+   changez ensuite la plage. */
 var BORNES_INTERIEURES = ["borne1", "borne2", "debutEntrees"];
-function dateValide(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(iso || ""); }
+var plagePrecedente = null;
 
-function ancrerBornesSurAnnee(){
-  var debut = el("debut").value;
-  if (!dateValide(debut)) return;                 // saisie en cours : on attend
-  var an = debut.slice(0, 4);
-  BORNES_INTERIEURES.forEach(function(id){
-    var v = el(id).value;
-    if (dateValide(v) && v.slice(0, 4) !== an) {
-      /* v3.9 — un 29 fevrier porte sur une annee non bissextile n'existe pas :
-         le champ de date le refusait et se vidait sans prevenir. On retombe
-         sur le dernier jour du mois. */
-      var mois = Number(v.slice(5, 7)), jour = Number(v.slice(8, 10));
-      var dernier = new Date(Number(an), mois, 0).getDate();
-      el(id).value = an + "-" + v.slice(5, 7) + "-" + String(Math.min(jour, dernier)).padStart(2, "0");
-    }
-  });
+function dateValide(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(iso || ""); }
+function enJours(a, b){
+  return Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+}
+function plusDeJours(iso, n){
+  var d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
-function surDebut(){ ancrerBornesSurAnnee(); recalculer(); }
-el("debut").addEventListener("change", surDebut);
-el("debut").addEventListener("input", surDebut);
+function replacerBornes(){
+  var debut = el("debut").value, fin = el("fin").value;
+  if (!dateValide(debut) || !dateValide(fin) || fin < debut) return;   // saisie en cours
+  var largeur = enJours(debut, fin);
 
-["fin","borne1","borne2","debutEntrees","maxDense","maxRalenti","maxEntrees"]
+  var avant = plagePrecedente;
+  var largeurAvant = (avant && dateValide(avant.debut) && dateValide(avant.fin))
+                     ? enJours(avant.debut, avant.fin) : 0;
+
+  BORNES_INTERIEURES.forEach(function(id){
+    var v = el(id).value;
+    if (!dateValide(v)) return;
+    var part;
+    if (largeurAvant > 0) {
+      part = enJours(avant.debut, v) / largeurAvant;          // sa place dans l'ancienne plage
+    } else {
+      part = 1;                                               // plage d'un jour : tout au bord
+    }
+    part = Math.min(1, Math.max(0, part));
+    var place = plusDeJours(debut, Math.round(part * largeur));
+    if (place < debut) place = debut;
+    if (place > fin) place = fin;
+    el(id).value = place;
+  });
+
+  /* l'ordre des periodes : les sorties denses ne peuvent pas finir apres les
+     ralenties, sans quoi la periode ralentie n'existerait plus. */
+  if (el("borne1").value > el("borne2").value) el("borne1").value = el("borne2").value;
+  plagePrecedente = { debut: debut, fin: fin };
+}
+
+function surPlage(){ replacerBornes(); recalculer(); }
+el("debut").addEventListener("change", surPlage);
+el("debut").addEventListener("input", surPlage);
+el("fin").addEventListener("change", surPlage);
+el("fin").addEventListener("input", surPlage);
+
+["borne1","borne2","debutEntrees","maxDense","maxRalenti","maxEntrees"]
   .forEach(function(id){
     el(id).addEventListener("change", recalculer);
     el(id).addEventListener("input", recalculer);
