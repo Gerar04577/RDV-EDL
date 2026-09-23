@@ -6,7 +6,7 @@
 <title>RDV EDL — Ouvrir les journées</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- admin.html — RDV EDL v5.3 — 22/09/2026
+<!-- admin.html — RDV EDL v5.7 — 22/09/2026
 
      REFONTE COMPLETE. La version precedente ouvrait UNE journee d'UN SEUL
      type, avec une cle « date_heure » qui ne portait pas le type. Deux
@@ -89,6 +89,19 @@
   .rdv button { background:#fff; color:var(--rouge); border:1.5px solid var(--rouge);
                 border-radius:8px; padding:7px 11px; font-size:13px; font-weight:700;
                 cursor:pointer; }
+  .rdv button.deplacer { color:var(--fonce); border-color:var(--fonce); }
+  .rdv .actions { display:flex; flex-direction:column; gap:5px; }
+  .cache { display:none; }
+  #forcage { background:#fff; border:2px solid var(--corail); border-radius:11px;
+             padding:12px 14px; margin:8px 0 14px; }
+  #forcage label { display:block; font-size:13px; font-weight:700; color:var(--fonce);
+                   margin:10px 0 4px; }
+  #forcage select, #forcage input { width:100%; padding:11px; border:1px solid var(--bord);
+                   border-radius:9px; font-size:15px; background:#fff; }
+  #forcage .rangee { display:flex; gap:10px; }
+  #forcage .rangee > div { flex:1; }
+  #forcage .avert { background:#FDF4F0; border-left:5px solid var(--corail);
+                    border-radius:8px; padding:9px 11px; margin:10px 0; font-size:13.5px; }
   details summary { cursor:pointer; font-weight:600; color:var(--fonce); }
   details div { font-size:13.5px; line-height:1.6; padding-top:8px; }
   .barre { position:fixed; left:0; right:0; bottom:0; background:#fff;
@@ -103,7 +116,7 @@
 
 <header>
   <h1>RDV EDL — Ouvrir les journées</h1>
-  <div class="version">v5.3 — périodes toujours dans la plage</div>
+  <div class="version">v5.7 — agenda : forcer et déplacer</div>
 </header>
 
 <main>
@@ -206,6 +219,8 @@
 
 <!-- v5.0 — L'AGENDA : ce qui est pris, ce qui reste libre. -->
 <h2 id="agenda">Agenda de la plage</h2>
+<button class="bouton clair" onclick="ouvrirForcage()">Forcer un rendez-vous</button>
+<div id="forcage" class="cache"></div>
 <div id="listeAgenda"></div>
 
 </main>
@@ -634,8 +649,11 @@ function dessinerAgenda(b){
           '<div class="qui"><b>' + echapperHTML(r.studio || r.uniteId || "") + "</b> · " +
           nature + "<br>" + echapperHTML(r.locataire || "") +
           "<br><span>" + echapperHTML(r.email || "") + "</span></div>" +
+          '<div class="actions">' +
+          '<button class="deplacer" onclick="deplacerRendezvous(&#39;' +
+          echapperHTML(c.cle) + '&#39;)">Déplacer</button>' +
           '<button onclick="annulerRendezvous(&#39;' + echapperHTML(c.cle) +
-          '&#39;)">Annuler</button></div>';
+          '&#39;)">Annuler</button></div></div>';
       }).join("");
     return '<div class="jourAg">' + enFrancais(d) + "</div>" + lignes;
   }).join("");
@@ -646,49 +664,387 @@ function dessinerAgenda(b){
                  "créneau ouvert", "créneaux ouverts") + "</div>" + html + "</div>";
 }
 
+
+/* ============ v5.4 — FORCER ET DEPLACER, DEPUIS L'AGENDA ==============
+   Julien doit pouvoir reamenager l'agenda selon les contraintes du terrain :
+   inscrire un rendez-vous a la place d'un locataire, et deplacer celui qui
+   est deja pris. Le delai de six jours entre la sortie et l'entree d'un meme
+   studio reste la regle, mais il est ABAISSABLE : c'est lui qui est sur
+   place, pas l'application. */
+var locatairesEDL = null;   // la liste, lue a la demande
+
+/* v5.6 — UN SEUL GESTE A LA FOIS SUR L'AGENDA.
+   Un double appui sur « Inscrire » envoyait deux reservations : la seconde se
+   heurtait a la cle deja prise, et l'ecran annoncait « L'inscription a
+   échoué » alors qu'elle avait reussi. Meme piege sur « Annuler » et
+   « Déplacer ». C'est le verrou deja pose dans l'ecran du locataire, que je
+   n'avais pas reporte ici. */
+var gesteEnCours = false;
+
+async function lireLocataires(){
+  if (locatairesEDL) return true;
+  try {
+    var res = await avecDelai(fetch(WEBHOOK, { method:"POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ action: "listeLocataires" }) }), 30);
+    var texte = await res.text();
+    if (!res.ok) throw new Error("Make a répondu " + res.status);
+    locatairesEDL = enListe(JSON.parse(texte).locataires)
+      .filter(function(l){ return l && l.uniteId && l.type; });
+    return true;
+  } catch (e){
+    locatairesEDL = null;
+    annoncer("ko", "La liste des locataires n'a pas pu être lue — " +
+      expliquerErreur(e) + ". Impossible de forcer un rendez-vous.");
+    return false;
+  }
+}
+
+/* Les creneaux libres de la plage, pour un type donne. */
+function creneauxLibres(type){
+  var pris = {};
+  (rendezvous || []).forEach(function(r){ pris[r.cle] = true; });
+  var b = bornes();
+  return enListe(existants).filter(function(c){
+    var d = dateDeCle(c.cle);
+    return d >= b.debut && d <= b.fin && typeDeCle(c.cle) === type && !pris[c.cle];
+  }).sort(function(a, c){ return a.cle < c.cle ? -1 : 1; });
+}
+
+/* Le rendez-vous de l'AUTRE type pour le meme studio : c'est de lui que se
+   compte le delai. */
+function rdvAutreType(uniteId, type){
+  return (rendezvous || []).filter(function(r){
+    return r.uniteId === uniteId && r.type !== type; })[0];
+}
+
+function ouvrirForcage(){
+  var zone = el("forcage");
+  if (zone.className !== "cache"){ zone.className = "cache"; zone.innerHTML = ""; return; }
+  zone.className = "";
+  zone.innerHTML = '<div class="avert">Lecture de la liste des locataires…</div>';
+  lireLocataires().then(function(ok){
+    if (!ok){ zone.className = "cache"; return; }
+    dessinerForcage();
+  });
+}
+
+function dessinerForcage(){
+  /* on n'offre que les locataires SANS rendez-vous de ce type : forcer ce qui
+     existe deja n'aurait pas de sens, et la cle serait refusee par Make. */
+  var libres = (locatairesEDL || []).filter(function(l){
+    return !(rendezvous || []).some(function(r){
+      return r.uniteId === l.uniteId && r.type === l.type; });
+  }).sort(function(a, b){ return (a.studio || "") < (b.studio || "") ? -1 : 1; });
+
+  if (!libres.length){
+    el("forcage").innerHTML = '<div class="avert">Tous les locataires de la ' +
+      "liste ont déjà un rendez-vous de chaque type.</div>";
+    return;
+  }
+  el("forcage").innerHTML =
+    "<label for=\"fLoc\">Le locataire</label>" +
+    '<select id="fLoc" onchange="majCreneauxForcage()">' +
+    /* v5.5 — LE CHOIX NE TIENT PLUS A UNE POSITION.
+       La valeur etait le rang dans la liste, recalculee a chaque appel : si
+       un rendez-vous etait pris ailleurs pendant que le formulaire etait
+       ouvert, la liste se raccourcissait et le rang designait QUELQU'UN
+       D'AUTRE. Demontre : Julien choisit Bernard, Celine est inscrite, et
+       elle recoit le courriel. La valeur est desormais l'unite et le type,
+       qui ne bougent jamais. */
+    libres.map(function(l){
+      return '<option value="' + echapperHTML(l.uniteId + "|" + l.type) + '">' +
+        echapperHTML(l.studio || l.uniteId) +
+        " — " + (l.type === "EDLS" ? "sortie" : "entrée") + " — " +
+        echapperHTML(l.locataire || "") + "</option>"; }).join("") +
+    "</select>" +
+    "<label for=\"fCre\">Le créneau</label>" +
+    '<select id="fCre"></select>' +
+    '<div class="rangee"><div>' +
+    "<label for=\"fDelai\">Délai avec l'autre état des lieux, en jours</label>" +
+    '<input type="number" id="fDelai" value="6" min="0" max="60" step="1" inputmode="numeric">' +
+    "</div></div>" +
+    '<div id="fAvert"></div>' +
+    '<button class="bouton" onclick="forcerRendezvous()">Inscrire le rendez-vous</button>';
+  majCreneauxForcage();
+}
+
+function locataireChoisi(){
+  var choix = String(el("fLoc").value || "").split("|");
+  return (locatairesEDL || []).filter(function(l){
+    return l.uniteId === choix[0] && l.type === choix[1]; })[0];
+}
+
+function majCreneauxForcage(){
+  var l = locataireChoisi();
+  if (!l) return;
+  var libres = creneauxLibres(l.type);
+  el("fCre").innerHTML = libres.length
+    ? libres.map(function(c){
+        return '<option value="' + echapperHTML(c.cle) + '">' +
+          enFrancais(dateDeCle(c.cle)) + " à " + echapperHTML(c.heure) + "</option>"; }).join("")
+    : '<option value="">aucun créneau libre de ce type dans la plage</option>';
+  var autre = rdvAutreType(l.uniteId, l.type);
+  el("fAvert").innerHTML = autre
+    ? '<div class="avert">L\'état des lieux ' +
+      (l.type === "EDLS" ? "d'entrée" : "de sortie") + " de ce studio est fixé au <b>" +
+      enFrancais(dateDeCle(autre.cle)) + "</b>. Le délai ci-dessus sera compté " +
+      "à partir de cette date ; vous pouvez l'abaisser.</div>"
+    : '<div class="avert">Aucun autre état des lieux n\'est fixé pour ce ' +
+      "studio : le délai ne s'applique pas.</div>";
+}
+
+async function forcerRendezvous(){
+  if (gesteEnCours) return;
+  gesteEnCours = true;
+  try {
+
+    var l = locataireChoisi();
+    var cle = el("fCre").value;
+    if (!l || !cle){ annoncer("ko", "Choisissez un locataire et un créneau."); return; }
+
+    /* v5.7 — L'AGENDA EST RELU AVANT D'INSCRIRE.
+       Le controle « ce locataire a-t-il deja un rendez-vous ? » se faisait sur
+       la liste lue a l'ouverture du formulaire, parfois vieille de plusieurs
+       minutes. Or Make n'empeche PAS un second rendez-vous pour la meme unite :
+       sa cle est le creneau, pas le locataire. Un formulaire laisse ouvert
+       pouvait donc en creer un doublon. */
+    annoncer("", "Vérification…");
+    rendezvous = null;
+    if (!(await lireRendezvous())) return;
+    if ((rendezvous || []).some(function(r){
+          return r.uniteId === l.uniteId && r.type === l.type; })){
+      annoncer("ko", (l.locataire || "Ce locataire") + " a déjà un rendez-vous de " +
+        "ce type — il a été pris entre-temps. Rien n'a été inscrit.");
+      dessinerAgenda(bornes()); dessinerForcage(); return;
+    }
+    var c = enListe(existants).filter(function(x){ return x.cle === cle; })[0];
+    /* v5.7 — on renoncait ici en silence : Julien cliquait, et rien ne se
+       passait, sans un mot. */
+    if (!c){
+      annoncer("ko", "Ce créneau n'existe plus dans la plage affichée. " +
+        "Recalculez, puis recommencez."); return;
+    }
+    if ((rendezvous || []).some(function(r){ return r.cle === cle; })){
+      annoncer("ko", "Ce créneau vient d'être réservé par quelqu'un d'autre. " +
+        "Choisissez-en un autre."); dessinerForcage(); return;
+    }
+
+    var delai = Math.max(0, Math.floor(Number(el("fDelai").value) || 0));
+    var autre = rdvAutreType(l.uniteId, l.type);
+    var ecart = autre ? Math.abs(Math.round(
+      (new Date(dateDeCle(cle) + "T12:00:00") - new Date(dateDeCle(autre.cle) + "T12:00:00")) / 86400000)) : null;
+
+    var question = "Inscrire " + (l.locataire || "") + " — " + (l.studio || "") + " — " +
+      (l.type === "EDLS" ? "sortie" : "entrée") + " le " + enFrancais(dateDeCle(cle)) +
+      " à " + c.heure + " ?";
+    if (ecart !== null && ecart < delai){
+      question += "\n\nATTENTION : " + pl(ecart, "jour", "jours") + " seulement " +
+        "séparent ce rendez-vous de l'autre état des lieux, au lieu de " +
+        pl(delai, "jour", "jours") + ".";
+    }
+    /* v5.7 — L'INVERSION PASSAIT INAPERCUE.
+       L'ecart etait pris en valeur absolue : une sortie placee APRES l'entree
+       du locataire suivant respectait le delai et ne declenchait aucun
+       avertissement. Or le nouveau locataire entrerait avant que l'ancien
+       soit parti. */
+    if (autre){
+      var dateCeci = dateDeCle(cle), dateAutre = dateDeCle(autre.cle);
+      var inverse = (l.type === "EDLS" && dateCeci > dateAutre) ||
+                    (l.type === "EDLE" && dateCeci < dateAutre);
+      if (inverse){
+        question += "\n\nATTENTION : la sortie serait fixée APRÈS l'entrée du " +
+          "locataire suivant (" + enFrancais(dateAutre) + ").";
+      }
+    }
+    question += "\n\nLe locataire en sera prévenu par courriel.";
+    if (!confirm(question)) return;
+
+    annoncer("", "Inscription…");
+    try {
+      var rep = await envoyerReservation(l, c, cle, "confirmation");
+      if (!rep.ok) throw new Error(rep.message || "créneau refusé");
+    } catch (e){
+      annoncer("ko", "L'inscription a échoué — " + expliquerErreur(e) + ".");
+      return;
+    }
+    el("forcage").className = "cache"; el("forcage").innerHTML = "";
+    rendezvous = null; await lireRendezvous(); dessinerAgenda(bornes());
+    annoncer("ok", "Rendez-vous inscrit. Le locataire en a été prévenu par courriel.");
+  } finally { gesteEnCours = false; }
+}
+
+/* Le courriel et l'ecriture, communs au forcage et au deplacement. */
+async function envoyerReservation(l, c, cle, nature, ancienne){
+  var quoi = l.type === "EDLS" ? "de sortie" : "d'entrée";
+  var quand = enFrancais(dateDeCle(cle)) + " à " + c.heure;
+  var lien = location.origin + location.pathname.replace(/[^/]*$/, "") +
+             "rendez-vous.html#" + l.uniteId + "-" + (l.type === "EDLS" ? "sortie" : "entree");
+  var corps = nature === "deplacement"
+    ? "Madame, Monsieur,\n\nLe rendez-vous pour l'état des lieux " + quoi +
+      " de votre logement " + (l.studio || "") + " a été déplacé au " + quand +
+      ".\n\nSi cette date ne vous convient pas, vous pouvez en choisir une autre " +
+      "en suivant ce lien :\n\n" + lien + "\n\n"
+    : "Madame, Monsieur,\n\nNous vous confirmons le rendez-vous pour l'état des " +
+      "lieux " + quoi + " de votre logement " + (l.studio || "") + ", le " + quand +
+      ".\n\nPour modifier ou annuler ce rendez-vous, utilisez le lien suivant :" +
+      "\n\n" + lien + "\n\n";
+  corps += "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
+    "distinguées.\n\n" + signer(l.uniteId);
+
+  var res = await avecDelai(fetch(WEBHOOK, { method:"POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ action:"reserver", cle: cle, date: c.date || dateDeCle(cle),
+      heure: c.heure, duree: c.duree, type: l.type, uniteId: l.uniteId,
+      immeuble: l.immeuble || "", studio: l.studio || "",
+      nom: l.locataire || "", email: l.email || "",
+      /* « silencieux » : aucun texte, donc aucun courriel — le filtre du
+         scenario n'envoie que si le corps existe. */
+      objet_courriel: nature === "silencieux" ? "" :
+        (nature === "deplacement" ? "Rendez-vous déplacé" : "Confirmation") +
+        " — état des lieux " + quoi + " — " + (l.studio || ""),
+      corps_courriel: nature === "silencieux" ? "" : corps }) }), 30);
+  var texte = await res.text();
+  if (!res.ok) throw new Error("Make a répondu " + res.status);
+  return JSON.parse(texte);
+}
+
+/* Liberer un creneau sans prevenir personne : sert au deplacement, ou le
+   locataire ne recoit qu'un seul courriel, celui du nouveau rendez-vous. */
+async function libererSansCourriel(r){
+  var res = await avecDelai(fetch(WEBHOOK, { method:"POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ action:"annuler", uniteId: r.uniteId, type: r.type,
+      nom: r.locataire, email: r.email }) }), 30);
+  var texte = await res.text();
+  if (!res.ok) throw new Error("Make a répondu " + res.status);
+  return JSON.parse(texte);
+}
+
+async function deplacerRendezvous(cle){
+  var r = (rendezvous || []).filter(function(x){ return x.cle === cle; })[0];
+  if (!r) return;
+  var libres = creneauxLibres(r.type);
+  if (!libres.length){
+    annoncer("attente", "Aucun autre créneau libre de ce type dans la plage " +
+      "affichée. Élargissez la plage en haut de l'écran."); return;
+  }
+  /* v5.5 — PLUS DE FENETRE « prompt ».
+     Elle obligeait a taper un numero, et certains navigateurs — dont celui
+     qui a deja refuse les AbortSignal — la bloquent purement et simplement.
+     Le choix se fait maintenant dans la page, par une liste de boutons. */
+  el("forcage").className = "";
+  el("forcage").innerHTML =
+    "<b>Déplacer " + echapperHTML(r.locataire || "") + " — " +
+    echapperHTML(r.studio || "") + "</b><br>" +
+    '<span style="font-size:13.5px;color:#6B7280">Actuellement le ' +
+    enFrancais(dateDeCle(cle)) + " à " +
+    echapperHTML(String(cle).slice(11, 16).replace("h", ":")) + "</span>" +
+    "<label>Nouveau créneau</label>" +
+    libres.map(function(c){
+      return '<button class="bouton clair" style="margin:4px 0" onclick="confirmerDeplacement(&#39;' +
+        echapperHTML(cle) + "&#39;,&#39;" + echapperHTML(c.cle) + '&#39;)">' +
+        enFrancais(dateDeCle(c.cle)) + " à " + echapperHTML(c.heure) + "</button>"; }).join("") +
+    '<button class="bouton clair" onclick="el(&#39;forcage&#39;).className=&#39;cache&#39;">' +
+    "Renoncer</button>";
+}
+
+async function confirmerDeplacement(ancienneCle, nouvelleCle){
+  if (gesteEnCours) return;
+  gesteEnCours = true;
+  try {
+
+    el("forcage").className = "cache"; el("forcage").innerHTML = "";
+    var r = (rendezvous || []).filter(function(x){ return x.cle === ancienneCle; })[0];
+    var c = enListe(existants).filter(function(x){ return x.cle === nouvelleCle; })[0];
+    if (!r || !c){ annoncer("ko", "Ce rendez-vous n'existe plus : rien n'a été déplacé."); return; }
+    var cle = ancienneCle;
+
+    annoncer("", "Déplacement…");
+    /* L'ANCIEN EST LIBERE D'ABORD.
+       La route d'annulation cherche le rendez-vous par unite ET par type : si
+       le nouveau etait inscrit d'abord, elle pourrait supprimer l'un OU
+       l'autre, au hasard. On libere donc, puis on inscrit — et si le nouveau
+       creneau vient d'etre pris, on remet aussitot l'ancien. */
+    try { await libererSansCourriel(r); }
+    catch (e){ annoncer("ko", "Le déplacement a échoué — " + expliquerErreur(e) +
+      ". Le rendez-vous est resté à sa place."); return; }
+
+    var l = { uniteId: r.uniteId, type: r.type, studio: r.studio,
+              immeuble: r.immeuble, locataire: r.locataire, email: r.email };
+    try {
+      var rep = await envoyerReservation(l, c, c.cle, "deplacement");
+      if (!rep.ok) throw new Error(rep.message || "créneau pris");
+    } catch (e){
+      var remis = false;
+      try {
+        var ancien = enListe(existants).filter(function(x){ return x.cle === cle; })[0];
+        /* v5.7 — la remise en place envoyait au locataire un courriel de
+           confirmation, alors que RIEN n'a change pour lui : il l'aurait recu
+           sans comprendre. On remet le rendez-vous sans rien lui dire. */
+        if (ancien) remis = !!(await envoyerReservation(l, ancien, cle, "silencieux")).ok;
+      } catch (x) { /* la remise en place a echoue aussi */ }
+      rendezvous = null; await lireRendezvous(); dessinerAgenda(bornes());
+      annoncer("ko", "Le déplacement a échoué — " + expliquerErreur(e) + ". " +
+        (remis ? "Le rendez-vous a été remis à sa place."
+               : "ATTENTION : l'ancien créneau n'a pas pu être repris. " +
+                 "Vérifiez l'agenda et inscrivez le rendez-vous à la main."));
+      return;
+    }
+    rendezvous = null; await lireRendezvous(); dessinerAgenda(bornes());
+    annoncer("ok", "Rendez-vous déplacé au " + enFrancais(dateDeCle(c.cle)) + " à " +
+      c.heure + ". Le locataire en a été prévenu par courriel.");
+  } finally { gesteEnCours = false; }
+}
+
 /* Annulation par Gerard : le locataire en est prevenu par courriel, sans
    quoi il croirait son rendez-vous maintenu et se presenterait pour rien. */
 async function annulerRendezvous(cle){
-  var r = (rendezvous || []).filter(function(x){ return x.cle === cle; })[0];
-  if (!r) return;
-  var quand = enFrancais(dateDeCle(cle)) + " à " + String(cle).slice(11, 16).replace("h", ":");
-  if (!confirm("Annuler le rendez-vous de " + (r.locataire || "") + " — " +
-               (r.studio || "") + " — " + quand + " ?\n\n" +
-               "Le locataire en sera prévenu par courriel.")) return;
-
-  var nature = r.type === "EDLS" ? "de sortie" : "d'entrée";
-  var lien = location.origin + location.pathname.replace(/[^/]*$/, "") +
-             "rendez-vous.html#" + r.uniteId + "-" +
-             (r.type === "EDLS" ? "sortie" : "entree");
-  var corps = "Madame, Monsieur,\n\n" +
-    "Le rendez-vous pour l'état des lieux " + nature + " de votre logement " +
-    (r.studio || "") + ", prévu le " + quand + ", a dû être annulé.\n\n" +
-    "Nous vous invitons à choisir une nouvelle date en suivant ce lien :\n\n" +
-    lien + "\n\n" +
-    "Les créneaux se réservent au fur et à mesure : nous vous invitons à " +
-    "faire votre choix sans tarder.\n\n" +
-    "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
-    "distinguées.\n\n" + signer(r.uniteId);
-
-  annoncer("", "Annulation…");
+  if (gesteEnCours) return;
+  gesteEnCours = true;
   try {
-    var res = await fetch(WEBHOOK, { method:"POST",
-      headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ action:"annuler", uniteId: r.uniteId, type: r.type,
-        nom: r.locataire, email: r.email,
-        objet_courriel: "Annulation — état des lieux " + nature + " — " + (r.studio || ""),
-        corps_courriel: corps }) });
-    var rep = JSON.parse(await res.text());
-    if (!res.ok || !rep.ok || !rep.annule) throw new Error(rep && rep.message || "annulation refusée");
-  } catch (e){
-    annoncer("ko", "L'annulation a échoué — " + expliquerErreur(e) +
-      ". Le rendez-vous est maintenu.");
-    return;
-  }
-  rendezvous = null;
-  await lireRendezvous();
-  dessinerAgenda(bornes());
-  annoncer("ok", "Rendez-vous annulé. Le locataire en a été prévenu par courriel.");
+
+    var r = (rendezvous || []).filter(function(x){ return x.cle === cle; })[0];
+    if (!r) return;
+    var quand = enFrancais(dateDeCle(cle)) + " à " + String(cle).slice(11, 16).replace("h", ":");
+    if (!confirm("Annuler le rendez-vous de " + (r.locataire || "") + " — " +
+                 (r.studio || "") + " — " + quand + " ?\n\n" +
+                 "Le locataire en sera prévenu par courriel.")) return;
+
+    var nature = r.type === "EDLS" ? "de sortie" : "d'entrée";
+    var lien = location.origin + location.pathname.replace(/[^/]*$/, "") +
+               "rendez-vous.html#" + r.uniteId + "-" +
+               (r.type === "EDLS" ? "sortie" : "entree");
+    var corps = "Madame, Monsieur,\n\n" +
+      "Le rendez-vous pour l'état des lieux " + nature + " de votre logement " +
+      (r.studio || "") + ", prévu le " + quand + ", a dû être annulé.\n\n" +
+      "Nous vous invitons à choisir une nouvelle date en suivant ce lien :\n\n" +
+      lien + "\n\n" +
+      "Les créneaux se réservent au fur et à mesure : nous vous invitons à " +
+      "faire votre choix sans tarder.\n\n" +
+      "Veuillez agréer, Madame, Monsieur, l'expression de nos salutations " +
+      "distinguées.\n\n" + signer(r.uniteId);
+
+    annoncer("", "Annulation…");
+    try {
+      var res = await fetch(WEBHOOK, { method:"POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ action:"annuler", uniteId: r.uniteId, type: r.type,
+          nom: r.locataire, email: r.email,
+          objet_courriel: "Annulation — état des lieux " + nature + " — " + (r.studio || ""),
+          corps_courriel: corps }) });
+      var rep = JSON.parse(await res.text());
+      if (!res.ok || !rep.ok || !rep.annule) throw new Error(rep && rep.message || "annulation refusée");
+    } catch (e){
+      annoncer("ko", "L'annulation a échoué — " + expliquerErreur(e) +
+        ". Le rendez-vous est maintenu.");
+      return;
+    }
+    rendezvous = null;
+    await lireRendezvous();
+    dessinerAgenda(bornes());
+    annoncer("ok", "Rendez-vous annulé. Le locataire en a été prévenu par courriel.");
+  } finally { gesteEnCours = false; }
 }
 
 /* la signature depend de l'immeuble ; si le fichier manque, on signe par defaut */
