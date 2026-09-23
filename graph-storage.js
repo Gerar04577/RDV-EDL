@@ -1,4 +1,16 @@
-// graph-storage.js — RDV EDL v1.1 — 20/09/2026
+// graph-storage.js — RDV EDL v1.2 — 22/09/2026
+//
+// v1.2 — CE FICHIER NE SAIT PLUS ECRIRE.
+//
+// Il etait repris tel quel de Gestion Loyers, avec ses fonctions d'ecriture :
+// ecrireFichierDansDossier, sauvegarderMoisOneDrive, televerserFichier...,
+// assurerDossier. RDV EDL ne doit JAMAIS ecrire dans les fichiers de Gestion
+// Loyers — il les lit, un point c'est tout. Les porter sans les employer,
+// c'est laisser une arme chargee sur la table : une modification ulterieure
+// pouvait les appeler par mégarde et abimer vos donnees.
+//
+// Elles sont retirees. Ne restent que la resolution de chemin et la lecture,
+// et la resolution refuse desormais de creer un dossier absent.
 // Repris de Gestion Loyers v157, avec UNE correction : voir
 // lireFichierDansDossier, plus bas.
 // Gestion Loyers — stockage des données dans OneDrive
@@ -137,50 +149,24 @@ async function obtenirRefRacineImmobilier() {
 // en descendant segment par segment PAR IDENTIFIANT ; crée les segments manquants
 // si creerSiAbsent est vrai
 async function resoudreRefParChemin(cheminRelatif, creerSiAbsent) {
+  /* v1.2 — la creation de dossier est retiree : cette application lit, elle
+     n'ecrit pas. Un chemin absent rend null, comme avant lorsqu'on ne
+     demandait pas la creation. */
+  if (creerSiAbsent) {
+    throw new Error("RDV EDL ne crée aucun dossier dans OneDrive");
+  }
   let ref = await obtenirRefRacineImmobilier();
   if (!cheminRelatif) return ref;
   const segments = cheminRelatif.split('/').filter(Boolean);
   for (const segment of segments) {
     const enfants = await enfantsDeRef(ref);
-    let trouve = enfants.find(e => (e.name || '').trim() === segment);
-    if (!trouve) {
-      if (!creerSiAbsent) return null;
-      const urlCreation = ref.driveId
-        ? `/drives/${ref.driveId}/items/${ref.id}/children`
-        : `/me/drive/items/${ref.id}/children`;
-      const creation = await appelGraph(urlCreation, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: segment, folder: {}, '@microsoft.graph.conflictBehavior': 'rename' })
-      });
-      if (creation.ok) {
-        trouve = await creation.json();
-      } else if (creation.status === 409) {
-        // le dossier existe déjà (créé entre-temps par un autre utilisateur/session) — pas une erreur
-        const enfants2 = await enfantsDeRef(ref);
-        trouve = enfants2.find(e => (e.name || '').trim() === segment);
-      } else {
-        throw new Error(`Création dossier "${segment}" : ${await detailErreur(creation)}`);
-      }
-    }
-    ref = refDe(trouve, ref.driveId);
+    const trouve = enfants.find(e => (e.name || '').trim() === segment);
+    if (!trouve) return null;
+    ref = refDe(trouve);
   }
   return ref;
 }
 
-/* v1.1 — LA REDIRECTION DE « /content » PERDAIT L'AUTORISATION.
-
-   Graph ne renvoie pas le fichier lui-meme : il redirige vers une adresse de
-   telechargement sur my.microsoftpersonalcontent.com, qui porte deja son
-   propre jeton temporaire dans l'adresse. Le navigateur suit la redirection
-   EN REEMETTANT l'en-tete Authorization — et ce domaine le refuse. Resultat :
-   un 401 qui accuse a tort le jeton Graph, alors qu'il est parfaitement
-   valable. Observe le 20/09 sur le compte de Gerard.
-
-   Le remede documente : demander la FICHE du fichier, y lire
-   « @microsoft.graph.downloadUrl », et appeler cette adresse SANS aucun
-   en-tete. On ne le fait qu'en repli, pour ne pas payer deux requetes quand
-   la premiere suffit. */
 async function lireFichierDansDossier(refDossier, nomFichier) {
   const base = refDossier.driveId
     ? `/drives/${refDossier.driveId}/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:`
@@ -203,133 +189,9 @@ async function lireFichierDansDossier(refDossier, nomFichier) {
   return await fetch(adresse);   // volontairement sans Authorization
 }
 
-// écrit (crée ou remplace) un fichier désigné par son NOM, à l'intérieur d'un dossier déjà résolu
-async function ecrireFichierDansDossier(refDossier, nomFichier, corpsTexte, options = {}) {
-  const url = refDossier.driveId
-    ? `/drives/${refDossier.driveId}/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:/content`
-    : `/me/drive/items/${refDossier.id}:/${encodeURIComponent(nomFichier)}:/content`;
-  const { headers: enTetesSupplementaires, ...autresOptions } = options;
-  return await appelGraph(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...(enTetesSupplementaires || {}) },
-    body: corpsTexte,
-    ...autresOptions
-  });
-}
 
-async function assurerDossier(cheminRelatif) {
-  await resoudreRefParChemin(cheminRelatif, true);
-}
 
-async function chargerIndexMoisOneDrive() {
-  const refDossier = await resoudreRefParChemin(SOUS_DOSSIER_HISTORIQUE, false);
-  if (!refDossier) return { mois: [] };
-  const res = await lireFichierDansDossier(refDossier, NOM_FICHIER_INDEX);
-  if (res.status === 404) return { mois: [] };
-  if (!res.ok) throw new Error(`Lecture index mois : ${await detailErreur(res)}`);
-  return await res.json();
-}
 
-async function sauvegarderIndexMoisOneDrive(index) {
-  const refDossier = await resoudreRefParChemin(SOUS_DOSSIER_HISTORIQUE, true);
-  const res = await ecrireFichierDansDossier(refDossier, NOM_FICHIER_INDEX, JSON.stringify(index, null, 2));
-  if (!res.ok) throw new Error(`Écriture index mois : ${await detailErreur(res)}`);
-}
 
-async function chargerMoisOneDrive(mois) {
-  const refDossier = await resoudreRefParChemin(SOUS_DOSSIER_HISTORIQUE, false);
-  if (!refDossier) return null;
-  const res = await lireFichierDansDossier(refDossier, `${mois}.json`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Lecture mois ${mois} : ${await detailErreur(res)}`);
-  return await res.json();
-}
 
-async function sauvegarderMoisOneDrive(mois, data) {
-  const refDossier = await resoudreRefParChemin(SOUS_DOSSIER_HISTORIQUE, true);
-  // v84 (22/08) — RETRAIT de "keepalive: true", qui était posé ici et NULLE PART
-  // ailleurs dans le dépôt, exactement sur la seule opération qui échouait.
-  // Motif : l'option keepalive de fetch() n'a rien à voir avec l'en-tête HTTP
-  // Connection: keep-alive. Elle sert à laisser survivre une requête à la
-  // fermeture de la page, et la spécification Fetch lui impose un budget de
-  // 64 Kio par document. Le fichier mensuel pèse ~37,7 Kio : deux écritures
-  // totalisent 75,4 Kio et dépassent le budget, ce qui produit un
-  // "TypeError: Failed to fetch" indiscernable d'une panne réseau.
-  // La garantie perdue (finir l'envoi si l'app est fermée en pleine sauvegarde)
-  // est déjà couverte par CLE_DERNIER_ENVOI + verifierEnvoiInterrompu() (app.js).
-  const res = await ecrireFichierDansDossier(refDossier, `${mois}.json`, JSON.stringify(data, null, 2));
-  if (!res.ok) throw new Error(`Écriture mois ${mois} : ${await detailErreur(res)}`);
 
-  const index = await chargerIndexMoisOneDrive();
-  if (!index.mois.includes(mois)) {
-    index.mois.push(mois);
-    index.mois.sort();
-    await sauvegarderIndexMoisOneDrive(index);
-  }
-  return true;
-}
-
-// dépose un vrai fichier (PDF, image...) dans un sous-dossier nommé, à l'intérieur d'un dossier déjà résolu ;
-// crée le sous-dossier s'il n'existe pas encore
-async function televerserFichierDansSousDossier(refDossierParent, nomSousDossier, fichier) {
-  let refSousDossier = null;
-  const enfants = await enfantsDeRef(refDossierParent);
-  let trouve = enfants.find(e => (e.name || '').trim() === nomSousDossier);
-  if (!trouve) {
-    const urlCreation = refDossierParent.driveId
-      ? `/drives/${refDossierParent.driveId}/items/${refDossierParent.id}/children`
-      : `/me/drive/items/${refDossierParent.id}/children`;
-    const creation = await appelGraph(urlCreation, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nomSousDossier, folder: {}, '@microsoft.graph.conflictBehavior': 'rename' })
-    });
-    if (creation.ok) {
-      trouve = await creation.json();
-    } else if (creation.status === 409) {
-      const enfants2 = await enfantsDeRef(refDossierParent);
-      trouve = enfants2.find(e => (e.name || '').trim() === nomSousDossier);
-    } else {
-      throw new Error(`Création dossier "${nomSousDossier}" : ${await detailErreur(creation)}`);
-    }
-  }
-  refSousDossier = refDe(trouve, refDossierParent.driveId);
-
-  const nomFichier = fichier.name;
-  const url = refSousDossier.driveId
-    ? `/drives/${refSousDossier.driveId}/items/${refSousDossier.id}:/${encodeURIComponent(nomFichier)}:/content`
-    : `/me/drive/items/${refSousDossier.id}:/${encodeURIComponent(nomFichier)}:/content`;
-  const res = await appelGraph(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': fichier.type || 'application/octet-stream' },
-    body: fichier
-  });
-  if (!res.ok) throw new Error(`Dépôt du fichier "${nomFichier}" : ${await detailErreur(res)}`);
-
-  /* ON RAPPORTE OÙ LE FICHIER EST RÉELLEMENT ARRIVÉ.
-
-     La fonction ne rendait que le nom du fichier. L'écran affichait donc
-     « Document déposé » sans dire ni où ni quand : impossible de retrouver
-     la pièce dans OneDrive sans la chercher à la main.
-
-     Le chemin est celui que Microsoft renvoie, pas un chemin reconstitué :
-     les dossiers de OneDrive ne portent pas toujours le même nom que les
-     unités de l'application — c'est même la raison d'être de l'écran
-     « Comparer noms OneDrive ». Un chemin deviné aurait été faux.
-
-     En cas de réponse illisible, on rend au moins le nom : le dépôt a eu
-     lieu, ce serait un tort de le faire passer pour un échec. */
-  let chemin = null, webUrl = null;
-  try {
-    const item = await res.json();
-    webUrl = item.webUrl || null;
-    const brut = item.parentReference && item.parentReference.path;
-    if (brut) {
-      chemin = decodeURIComponent(String(brut).replace(/^\/[^:]*:?/, ''))
-        .replace(/^\/+/, '').split('/').filter(Boolean).join(' / ')
-        + ' / ' + (item.name || nomFichier);
-    }
-  } catch (e) { /* le dépôt a réussi : l'absence de chemin ne l'annule pas */ }
-
-  return { nom: nomFichier, chemin, webUrl };
-}
