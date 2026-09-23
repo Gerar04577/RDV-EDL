@@ -6,7 +6,7 @@
 <title>RDV EDL</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#F0997B">
-<!-- index.html — RDV EDL v1.6 — 22/09/2026
+<!-- index.html — RDV EDL v1.7 — 22/09/2026
 
      CETTE PAGE EXISTE POUR UNE RAISON PRÉCISE.
 
@@ -34,13 +34,25 @@
              background: var(--fonce); color: #fff; font-size: 16px; font-weight: 600; }
   a.bouton .sous { display: block; font-size: 12.5px; font-weight: 400;
                    opacity: .85; margin-top: 3px; }
+  /* v1.7 — le mode d'emploi */
+  .emploi { background: #fff; border: 1px solid var(--bord); border-radius: 12px;
+            padding: 4px 16px 16px; margin: 22px 0 10px; }
+  .emploi h2 { font-size: 17px; color: var(--fonce); margin: 18px 0 6px;
+               border-bottom: 2px solid var(--corail); padding-bottom: 5px; }
+  .emploi h3 { font-size: 15px; color: var(--fonce); margin: 16px 0 4px; }
+  .emploi p, .emploi li { font-size: 14.5px; line-height: 1.55; color: #333; }
+  .emploi ol { padding-left: 20px; margin: 6px 0; }
+  .emploi li { margin: 5px 0; }
+  .emploi .att { background: #FDF4F0; border-left: 5px solid var(--corail);
+                 border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .emploi .att b { color: var(--fonce); }
 </style>
 </head>
 <body>
 
 <header>
   <h1>RDV EDL</h1>
-  <div class="version">v1.6 — rendez-vous d'états des lieux</div>
+  <div class="version">v1.7 — rendez-vous d'états des lieux</div>
 </header>
 
 <main>
@@ -56,6 +68,99 @@
        directement, a la section, sans avoir a faire defiler. -->
   <a class="bouton" href="admin.html#agenda">Agenda des rendez-vous
     <span class="sous">qui a réservé quoi, et ce qui reste libre</span></a>
+
+  <!-- v1.7 — MODE D'EMPLOI, pour quelqu'un qui n'a pas suivi la
+       construction : l'ordre des gestes, ce que fait chaque ecran, et quoi
+       faire quand cela coince. Demande de Gerard le 22/09, pour Julien. -->
+  <section class="emploi">
+    <h2>Mode d'emploi</h2>
+
+    <p>Cette application sert à fixer les rendez-vous d'états des lieux. Les
+    locataires choisissent eux-mêmes leur date parmi les créneaux ouverts ;
+    personne n'a besoin de les appeler.</p>
+
+    <p>Deux mots reviennent partout : <b>sortie</b>, l'état des lieux du
+    locataire qui s'en va, et <b>entrée</b>, celui du locataire qui arrive.
+    Une sortie dure 1 h 30, une entrée 2 h 30, et il faut 30 minutes de route
+    entre deux rendez-vous.</p>
+
+    <h2>Les quatre gestes, dans l'ordre</h2>
+
+    <h3>1. Ouvrir les journées</h3>
+    <p>Écran <b>Ouvrir des journées</b>. On y choisit la plage de dates à
+    ouvrir, et l'application calcule seule les heures de chaque journée.</p>
+    <ol>
+      <li>Vérifier la plage en haut, dans le cadre orange : <b>du</b> … <b>au</b> …</li>
+      <li>Les trois périodes en dessous découpent cette plage : les journées
+      chargées en sorties, celles qui le sont moins, puis les entrées. Elles
+      se replacent seules quand on change la plage.</li>
+      <li>Regarder le calendrier proposé : en couleur ce qui va s'ajouter, en
+      gris ce qui existe déjà.</li>
+      <li>Cliquer sur <b>Envoyer</b>.</li>
+    </ol>
+    <div class="att"><b>Sans danger :</b> réouvrir une plage n'efface rien et ne
+    crée pas de doublon. Une journée déjà pleine ne reçoit plus rien.</div>
+
+    <h3>2. Mettre la liste des locataires à jour</h3>
+    <p>Écran <b>Locataires à inviter</b>. La liste est lue dans Gestion Loyers
+    — les départs, les arrivées, les adresses. Elle n'est jamais modifiée par
+    cette application.</p>
+    <ol>
+      <li>Ouvrir l'écran et attendre que la liste s'affiche.</li>
+      <li>Cliquer sur <b>Mettre à jour</b>. Sans ce geste, les locataires ne
+      seront pas reconnus quand ils cliqueront sur leur lien.</li>
+    </ol>
+    <div class="att">Une ligne en rouge signale une adresse manquante : elle se
+    corrige <b>dans Gestion Loyers</b>, puis on recharge cet écran.</div>
+
+    <h3>3. Envoyer les invitations</h3>
+    <p>Même écran.</p>
+    <ol>
+      <li>Cocher les locataires à inviter.</li>
+      <li>Cliquer sur <b>Envoyer</b> et confirmer.</li>
+      <li>Les lignes envoyées se décochent et portent la mention « invité ».</li>
+    </ol>
+    <p>Chacun reçoit un courriel avec un lien personnel. Le courriel est signé
+    selon l'immeuble : Havré au nom de la S.A. SAMADHI, Egmont au nom de Julien
+    Gérard, les autres au nom de Jean-Marc Gérard.</p>
+
+    <h3>4. Suivre l'agenda</h3>
+    <p>Écran <b>Agenda des rendez-vous</b>. Il montre, pour la plage choisie en
+    haut de l'écran, chaque créneau : pris — avec le studio, le locataire et son
+    adresse — ou libre, en gris.</p>
+    <p>Le bouton <b>Annuler</b> supprime un rendez-vous et prévient le locataire
+    par courriel, en lui donnant le lien pour en choisir un autre.</p>
+
+    <h2>Ce que voit le locataire</h2>
+    <ol>
+      <li>Il clique sur le lien de son courriel.</li>
+      <li>Il tape son nom et son adresse électronique ; c'est ainsi qu'il est
+      reconnu. Une petite faute de frappe est tolérée.</li>
+      <li>Il choisit une heure, et reçoit une confirmation par courriel.</li>
+      <li>Il peut annuler et reprendre une autre date par le même lien.</li>
+    </ol>
+    <p>Trois règles s'appliquent seules : un locataire qui entre ne voit rien
+    tant que le sortant n'a pas fixé son rendez-vous ; il faut <b>six jours</b>
+    entre la sortie et l'entrée d'un même studio ; et un créneau réservé
+    disparaît aussitôt pour les autres.</p>
+
+    <h2>Quand cela ne va pas</h2>
+    <p>Les messages s'affichent en <b>bandeau coloré</b> en haut de l'écran :
+    vert pour une réussite, rouge pour un échec, orange quand il n'y a rien à
+    proposer. Il reste affiché jusqu'à ce qu'on le ferme par la croix.</p>
+    <ol>
+      <li><b>« pas de connexion Internet »</b> — le réseau manque ; réessayer
+      plus tard, rien n'a été envoyé.</li>
+      <li><b>« Se reconnecter à Microsoft »</b> — la connexion à OneDrive a
+      expiré ; cliquer sur le bouton du message.</li>
+      <li><b>« Make a accepté la demande sans répondre »</b> — recharger la page
+      avant de recommencer : l'opération a peut-être abouti.</li>
+      <li><b>Un écran reste vide</b> — cliquer sur <b>Recalculer</b>.</li>
+    </ol>
+    <div class="att">Si un message parle de Make ou d'un scénario, c'est le
+    moteur d'envoi qui est en cause : <b>prévenir Jean-Marc</b> plutôt que de
+    recommencer plusieurs fois.</div>
+  </section>
 </main>
 
 <script src="bandeau-edl.js?v=1.2"></script>
